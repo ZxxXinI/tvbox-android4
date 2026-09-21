@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">TVBox 4.4</string>
+    <string name="nav_history">历史</string>
+    <string name="nav_history_shortcut">历史(1)</string>
+    <string name="nav_search">搜索</string>
+    <string name="nav_search_shortcut">搜索(2)</string>
+    <string name="nav_recommend">推荐</string>
+    <string name="nav_recommend_shortcut">推荐(3)</string>
+    <string name="nav_live_tv">电视</string>
+    <string name="nav_platform_live">直播</string>
+    <string name="nav_settings">设置</string>
+    <string name="nav_settings_shortcut">设置(6)</string>
+    <string name="loading">正在加载…</string>
+    <string name="retry">重试</string>
+    <string name="back_exit_tip">再按一次返回键退出</string>
+    <string name="clear_history">清空历史</string>
+    <string name="poster_desc">影片海报</string>
+    <string name="qr_config_desc">扫码配置二维码</string>
+</resources>

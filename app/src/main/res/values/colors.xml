@@ -1,0 +1,18 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 默认 TVBox 风格：深色层次 + 绿色强调 + 白色焦点环 -->
+    <color name="screen_bg">#121212</color>
+    <color name="card_bg">#181818</color>
+    <color name="card_bg_secondary">#252525</color>
+    <color name="text_primary">#F4F5F7</color>
+    <color name="text_secondary">#B3B3B3</color>
+    <color name="accent">#1ED760</color>
+    <color name="accent_dim">#1DB954</color>
+    <color name="accent_soft">#331ED760</color>
+    <color name="error">#FF6B6B</color>
+    <color name="divider">#333333</color>
+    <color name="focus_stroke">#FFFFFF</color>
+    <color name="chip_selected_bg">#1ED760</color>
+    <color name="chip_selected_text">#06130A</color>
+    <color name="scrim">#B3000000</color>
+</resources>

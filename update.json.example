@@ -1,0 +1,14 @@
+{
+  "versionCode": 2,
+  "versionName": "1.1.0",
+  "apkUrl": "https://example.com/tvbox44/release/TVBox44-1.1.0.apk",
+  "apkSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "apkSize": 0,
+  "force": false,
+  "changelog": [
+    "示例清单：发布时替换为真实地址与校验值",
+    "apkSha256 为 APK 文件的 SHA-256 十六进制值",
+    "apkSize 为字节数，0 表示跳过大小校验",
+    "仅在远端 versionCode 大于当前版本时提示"
+  ]
+}

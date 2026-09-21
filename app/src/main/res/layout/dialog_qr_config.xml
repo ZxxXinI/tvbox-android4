@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_horizontal"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:id="@+id/qr_url"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:gravity="center"
+        android:textColor="@color/accent"
+        android:textSize="14sp" />
+
+    <ImageView
+        android:id="@+id/qr_image"
+        android:layout_width="320dp"
+        android:layout_height="320dp"
+        android:layout_marginTop="14dp"
+        android:background="@color/text_primary"
+        android:contentDescription="@string/qr_config_desc"
+        android:scaleType="fitCenter" />
+
+    <TextView
+        android:id="@+id/qr_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="14dp"
+        android:gravity="center"
+        android:textColor="@color/text_secondary"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/qr_close"
+        style="@style/Widget.Tv.NavButton"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="关闭会话" />
+</LinearLayout>

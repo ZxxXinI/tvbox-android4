@@ -1,0 +1,178 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<com.tvbox.android44.common.StateLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/home_state"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="horizontal">
+
+        <!-- 左侧图标导航（与内容区有分界） -->
+        <LinearLayout
+            android:id="@+id/home_cinema_rail"
+            android:layout_width="88dp"
+            android:layout_height="match_parent"
+            android:background="@color/card_bg"
+            android:gravity="center_horizontal"
+            android:orientation="vertical"
+            android:paddingTop="10dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginBottom="8dp"
+                android:text="影院"
+                android:textColor="@color/accent"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/cinema_nav_history"
+                style="@style/Widget.Tv.CinemaRailItem"
+                android:text="历\n史" />
+
+            <TextView
+                android:id="@+id/cinema_nav_search"
+                style="@style/Widget.Tv.CinemaRailItem"
+                android:text="搜\n索" />
+
+            <TextView
+                android:id="@+id/cinema_nav_recommend"
+                style="@style/Widget.Tv.CinemaRailItem"
+                android:text="推\n荐" />
+
+            <TextView
+                android:id="@+id/cinema_nav_live_tv"
+                style="@style/Widget.Tv.CinemaRailItem"
+                android:visibility="gone"
+                android:text="电\n视" />
+
+            <TextView
+                android:id="@+id/cinema_nav_platform_live"
+                style="@style/Widget.Tv.CinemaRailItem"
+                android:visibility="gone"
+                android:text="直\n播" />
+
+            <TextView
+                android:id="@+id/cinema_nav_settings"
+                style="@style/Widget.Tv.CinemaRailItem"
+                android:text="设\n置" />
+        </LinearLayout>
+
+        <!-- 右侧：Hero + 分类行 + 海报网格 -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:paddingLeft="20dp"
+            android:paddingRight="24dp"
+            android:paddingTop="8dp"
+            android:paddingBottom="12dp">
+
+            <!-- Hero：背景海报 + 标题 + 播放/详情 -->
+            <FrameLayout
+                android:id="@+id/home_hero"
+                android:layout_width="match_parent"
+                android:layout_height="190dp"
+                android:visibility="gone">
+
+                <ImageView
+                    android:id="@+id/home_hero_backdrop"
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:contentDescription="@string/poster_desc"
+                    android:scaleType="centerCrop" />
+
+                <View
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent"
+                    android:background="@drawable/bg_hero_scrim" />
+
+                <LinearLayout
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_gravity="left|center_vertical"
+                    android:layout_marginLeft="24dp"
+                    android:layout_marginTop="30dp"
+                    android:orientation="vertical">
+
+                    <TextView
+                        android:id="@+id/home_hero_title"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:textColor="@color/text_primary"
+                        android:textSize="26sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/home_hero_meta"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="4dp"
+                        android:maxLines="1"
+                        android:ellipsize="end"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="14sp" />
+
+                    <LinearLayout
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginTop="12dp"
+                        android:orientation="horizontal">
+
+                        <TextView
+                            android:id="@+id/home_hero_play"
+                            style="@style/Widget.Tv.NavButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="播放" />
+
+                        <TextView
+                            android:id="@+id/home_hero_detail"
+                            style="@style/Widget.Tv.NavButton"
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:layout_marginLeft="14dp"
+                            android:text="详情" />
+                    </LinearLayout>
+                </LinearLayout>
+            </FrameLayout>
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/home_tabs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="10dp"
+                android:scrollbars="none" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/home_sub_tabs"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:scrollbars="none" />
+
+            <TextView
+                android:id="@+id/home_status"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp"
+                android:visibility="gone" />
+
+            <androidx.recyclerview.widget.RecyclerView
+                android:id="@+id/home_grid"
+                android:layout_width="match_parent"
+                android:layout_height="0dp"
+                android:layout_weight="1"
+                android:scrollbars="none" />
+        </LinearLayout>
+    </LinearLayout>
+</com.tvbox.android44.common.StateLayout>

@@ -1,0 +1,8 @@
+sdk.dir=/path/to/Android/Sdk
+# TVBOX_PLATFORM_LIVE_SERVICE_URL=http://your-lan-server:8868
+# TVBOX_OTA_MANIFEST_URL=https://your-host/tvbox-android44/update.json
+# TVBOX_IPTV_SOURCE_URL=http://your-host/tvbox/result.txt
+# TVBOX_STORE_FILE=../keystore/release.jks
+# TVBOX_STORE_PASSWORD=
+# TVBOX_KEY_ALIAS=
+# TVBOX_KEY_PASSWORD=
