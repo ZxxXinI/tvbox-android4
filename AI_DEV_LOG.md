@@ -395,3 +395,5 @@
 - Git 读取正常，main dry-run 无差异；GitHub API CONNECT 在 TLS 前返回代理 403。按云环境技能保存 api.github.com / uploads.github.com 网络配置草稿，保留原环境配置，尚待环境设置保存并应用；没有绕过代理、放宽 TLS 或索要新 GitHub token。
 
 尚未创建 v0.0.2 Release、正式签名 APK 或线上 update.json；缺少原私钥/明确证书方案及已应用的 API 网络配置。设备验收仍按 docs/13 如实记录，源码提交和后续发布以 docs/15 的最新记录为准。
+
+后续提交与推送：业务源码、回归、CI 及文档提交 454390141b5cae612368b4842877a7cfad89b903，原生 Git 推送 main 成功，远端引用一致；没有创建 v0.0.2 标签。首次在线运行 https://github.com/ZxxXinI/tvbox-android4/actions/runs/37434928294 显示 Failure、32 秒、无 APK 产物；公开任务页要求登录查看日志，当前 API 网络未恢复，未认定具体根因。已更新当前报告和规划状态，后续需在 API 恢复后读取真实日志并修复。

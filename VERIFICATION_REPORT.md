@@ -81,7 +81,7 @@ Java 路径相对 `app/src/main/java/com/tvbox/android44/`；详细行为与验�
 
 已下载公开 v0.0.1 APK，并核对其证书摘要为 `d507b831ebd7af498c550d0e24b84d1a10f218132ec9e6ce4c43d19f15c1e2d6`（Android Debug）。云环境 Debug 证书为 `0e64f475052556db51387d103a43f11072afb5b676c03eeb7486737b90886e2a`，不能覆盖旧安装。实际 v0.0.2 调试签名 Release 在传入 --previous-apk 后被生成器拒绝，退出码 1、无输出目录。正式签名强检查保留；没有原私钥，不把当前验证证书替代为正式证书。
 
-静态检查包括 `git diff --check`、Markdown UTF-8/BOM/U+FFFD/本地链接、Java/Gradle/YAML/脚本无 BOM、XML 解析与资源引用、设备脚本语法、发布脚本 Python 语法和 CI YAML 解析。当前没有 GitHub Actions 在线运行结果。源码、证书与发布进度见 [发布记录](docs/15-v0.0.2发布准备与记录.md)。
+静态检查包括 `git diff --check`、22 个 Markdown UTF-8/BOM/U+FFFD/63 个本地链接、68 个变更代码文件无 BOM、35 个 XML 解析及 138 条字符串资源引用、设备脚本语法、发布脚本 Python 语法和 CI YAML 解析。业务源码 4543901 已推送 main；首次 [GitHub Actions](https://github.com/ZxxXinI/tvbox-android4/actions/runs/37434928294) 为 Failure、无产物，日志要求登录；API 放行后需读取真实日志、修复并取得线上通过结果。源码、证书与发布进度见 [发布记录](docs/15-v0.0.2发布准备与记录.md)。
 
 ## 剩余警告与验收
 
