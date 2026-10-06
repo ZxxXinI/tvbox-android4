@@ -415,3 +415,15 @@
 启用 TVBOX_REQUIRE_RELEASE_SIGNING=true，注入稳定 OTA URL，以原私钥 assembleRelease：BUILD SUCCESSFUL in 10s，40 个任务、退出码 0。实际 v1/v2、版本/SDK 和原证书连续性检查通过；prepare_release.py 的原调试证书模式接受该 APK，metadata 为 legacy-debug-release、canUpgradePreviousInstallation=true，清单、副本、大小和哈希一致。初次材料保存在 release-v0.0.2/initial-signed；源码提交后会重构建，使 APK version-control-info 指向实际用于发布的源码提交，再固定最终材料。
 
 此时原私钥阻断已解决；网络规格仍为 3，API/上传域名未应用，尚未创建 v0.0.2 Release 或更新线上清单。在线 CI 的真实错误仍需 API 可用后读取并修复。
+
+### 固定最终原证书 APK 与发布材料
+
+发布工具、13 项策略回归与证书方案提交 551c6e166d3b07f8dc690b146c795e5a756e5cd7，已推送 main。从该干净提交再次构建，使实际 APK version-control-info 对应该提交；最终原签名日志 BUILD SUCCESSFUL in 10s、40 个任务（2 执行、38 up-to-date）、退出码 0。
+
+最终 app-release.apk 2,972,833 字节，SHA-256 ddcee0399a6c3ab1eb927a343e6f1e2216605dfe613eac7c181beed2cdaf6616；SDK19/28、0.0.2/code2、1 DEX、release/运行时不可调试、原证书 v1/v2 有效。发布模式与上一版证书相同、版本递增，材料记录 legacy-debug-release 和可覆盖安装条件。实际稳定 OTA URL、源码提交、APK 副本字节、清单大小/哈希、SHA256SUMS 核对全部通过；publish/ 仅有 APK、update.json、apk-info.json、signature.txt、SHA256SUMS 五个公开文件，不含私钥或口令。
+
+当前源码的在线运行 https://github.com/ZxxXinI/tvbox-android4/actions/runs/37445773903 显示 Failure、20 秒、无产物。原生 gh 日志读取仍为 Forbidden；再次读取运行配置确认规格 3、API/上传域名未应用。原签名和本地材料已完成，尚未创建 v0.0.2 标签、Release 或更新线上清单；待在环境设置保存并发布网络草稿后，读取真实失败日志并修复，再完成公开发布及下载校验。后续文档记录提交不改变已固定 APK 的源码 551c6e1。
+
+### 按用户要求交接手动发布
+
+用户明确表示由其自行更新与发布，本轮转为完整材料交接，不再等待网络配置执行自动发布。已整理可直接使用的 release-notes.md、五个公开发布文件和手动发布说明，打包 tvbox-android4-v0.0.2-release.zip；包内仅这七个文件，解压 APK 与最终签名字节及 SHA-256 核对一致，未包含 keystore、口令或云环境调试包。说明包含 v0.0.2 标签、构建提交 551c6e1、保持附件文件名、正式/最新 Release、下载哈希校验，以及当前线上 CI 失败和设备验收未完成的真实限制。GitHub Release/标签/线上清单仍由用户后续创建。

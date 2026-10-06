@@ -30,7 +30,7 @@ bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembl
 
 未签名候选使用本地 `unsigned.init.gradle` 在 Android DSL 完成前移除 Release 签名配置，并注入 `https://github.com/ZxxXinI/tvbox-android4/releases/latest/download/update.json`。构建日志 `release-v0.0.2-unsigned-final.log` 为 `BUILD SUCCESSFUL in 11s`，39 个任务；实际 APK 经 aapt、ZIP 和 apksigner 核对，版本/SDK 正确、含该清单地址且确实未签名。正式发布必须另用受控私钥完成签名并重新计算哈希。
 
-原私钥签名初次构建日志 `release-v0.0.2-original-signing.log` 为 `BUILD SUCCESSFUL in 10s`，40 个任务、退出码 0。启用 TVBOX_REQUIRE_RELEASE_SIGNING=true，从受控环境注入签名并构建；实际 v1/v2 和证书连续性通过，材料副本/哈希/大小一致。源码提交后将固定最终构建及其 version-control-info，最终摘要以 docs/15 为准。
+原私钥签名初次构建日志 `release-v0.0.2-original-signing.log` 为 `BUILD SUCCESSFUL in 10s`，40 个任务、退出码 0。提交源码后最终日志 `release-v0.0.2-original-signing-final.log` 同样 10s、40 个任务（2 执行、38 up-to-date）、退出码 0。启用 TVBOX_REQUIRE_RELEASE_SIGNING=true，从受控环境注入签名；APK 内源码提交为 551c6e166d3b07f8dc690b146c795e5a756e5cd7，实际 v1/v2、证书连续性和材料副本/哈希/大小一致性全部通过。
 
 ## 本轮新增回归
 
@@ -71,7 +71,7 @@ Java 路径相对 `app/src/main/java/com/tvbox/android44/`；详细行为与验�
 | --- | ---: | --- |
 | Debug（调试签名） | 7,648,138 | `2029b54bccbcf149c80d7cab4fd94f030feb64c04d81cb24446dd96e13fdc88e` |
 | Release（先前未签名备份，不能安装） | 2,909,854 | `0b5622920dba59bbf22e25f7ed85b36d923b595c744eba88bda3e9d863946c5f` |
-| Release（原证书签名初次验证包） | 2,972,831 | `02eca43605318681a1497ad9d6bd2bbfd7959b4eaf642cc38e656f939c0f0c2d` |
+| Release（最终原证书签名，源码 551c6e1） | 2,972,833 | `ddcee0399a6c3ab1eb927a343e6f1e2216605dfe613eac7c181beed2cdaf6616` |
 
 - [Debug APK](app/build/outputs/apk/debug/app-debug.apk)
 - [当前原证书签名 Release APK](app/build/outputs/apk/release/app-release.apk)
@@ -80,7 +80,7 @@ Java 路径相对 `app/src/main/java/com/tvbox/android44/`；详细行为与验�
 - [Debug Lint](app/build/reports/lint-results-debug.html)
 - [Release Lint](app/build/reports/lint-results-release.html)
 
-上一轮 v0.0.1 验证包及报告保存在 `/workspace/.cloud-setup/tvbox/release-v0.0.2/baseline/`；先前未签名包备份在 `/workspace/.cloud-setup/tvbox/release-v0.0.2/`，初次原证书签名材料在其 `initial-signed/`。表中哈希各自对应这些字节；最终源码构建后的摘要将写入 docs/15 并用于实际 update.json。
+上一轮 v0.0.1 验证包及报告保存在 `/workspace/.cloud-setup/tvbox/release-v0.0.2/baseline/`；先前未签名包备份在 `/workspace/.cloud-setup/tvbox/release-v0.0.2/`，初次原证书签名材料在其 `initial-signed/`。最终签名 APK 与五个发布文件在其 `publish/`；清单 SHA-256/大小、APK 副本、SHA256SUMS 与表中最终字节一致，尚未上传。APK 为 release 构建、运行时不可调试，原证书类型单独标注 legacy-debug-release。
 
 已下载公开 v0.0.1 APK，并核对其证书摘要为 `d507b831ebd7af498c550d0e24b84d1a10f218132ec9e6ce4c43d19f15c1e2d6`（Android Debug）。云环境 Debug 证书为 `0e64f475052556db51387d103a43f11072afb5b676c03eeb7486737b90886e2a`，不能覆盖旧安装。先前云环境证书 v0.0.2 APK 在传入 --previous-apk 后被生成器拒绝，退出码 1、无输出目录；用户上传原 keystore 后的新签名 APK 则与公开上一版一致，生成器已接受并记录可覆盖升级条件。
 
@@ -92,6 +92,6 @@ Java 路径相对 `app/src/main/java/com/tvbox/android44/`；详细行为与验�
 
 44 条非阻断警告包括 SetTextI18n 8、NotifyDataSetChanged 7、DiscouragedApi 5、布局/资源/自动填充建议及保留模块提示；完整报告保留逐条位置。允许用户配置 HTTP 视频接口的网络基线提示仍存在，HTTPS 证书验证没有放宽；API 19 空间检查保留 UsableSpace 建议。无 NewApi/InlinedApi 阻断，未提高 minSdk 或新增关闭 Lint 来通过检查。
 
-设备和正式发布按 [验收清单](docs/13-当前版本基线与验收清单.md) 执行：API 19 冷启动/Multidex、真实标准/无扩展名 HLS 与 MP4、遥控器、慢流换线、持续使用、手机扫码、实际模型、API 26+ 安装授权及同证书升级。版本码已递增至 2；正式签名、公开下载与线上 CI 结果仍待完成。
+设备和正式发布按 [验收清单](docs/13-当前版本基线与验收清单.md) 执行：API 19 冷启动/Multidex、真实标准/无扩展名 HLS 与 MP4、遥控器、慢流换线、持续使用、手机扫码、实际模型、API 26+ 安装授权及同证书升级。版本码已递增至 2，原证书签名和本地材料已完成；公开下载和当前源码线上 CI 仍待完成。当前源码 551c6e1 的 Actions 运行失败，原生日志读取返回 Forbidden，网络放行草稿尚未应用；链接见 docs/15。
 
 JSON 模型与现有版本兼容，未做破坏性迁移；源码回滚保留用户文档与既有数据。正式安装包回滚仍受证书与 Android 版本码限制，应保留原发布 APK/清单；当前 Debug 与未签名候选均不能作为旧用户的覆盖升级包。
