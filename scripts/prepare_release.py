@@ -46,7 +46,10 @@ def main():
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--build-tools', type=Path, help='Android SDK build-tools directory')
     parser.add_argument('--changelog', action='append', default=[])
-    parser.add_argument('--allow-debug-signing', action='store_true', help='For local/CI validation only')
+    signing_mode = parser.add_mutually_exclusive_group()
+    signing_mode.add_argument('--allow-debug-signing', action='store_true', help='For local/CI validation only')
+    signing_mode.add_argument('--allow-legacy-debug-upgrade', action='store_true',
+                             help='Explicitly reuse a previously published debug certificate; requires the same certificate and a higher version')
     parser.add_argument('--previous-apk', type=Path, help='Previously published APK; checks version and signing continuity')
     parser.add_argument('--allow-certificate-change', action='store_true', help='Explicit signing migration; old installations cannot upgrade in place')
     args = parser.parse_args()
@@ -63,8 +66,13 @@ def main():
     current = inspect_apk(apk, tools_dir)
     app_id, code, name = current['applicationId'], current['versionCode'], current['versionName']
     signature, debug = current['signature'], current['debug']
-    if debug and not args.allow_debug_signing:
-        raise ValueError('检测到调试签名；正式发布必须使用原发布密钥。验证构建可显式 --allow-debug-signing')
+    if debug and not (args.allow_debug_signing or args.allow_legacy_debug_upgrade):
+        raise ValueError('检测到调试签名；验证构建可显式 --allow-debug-signing，沿用原调试证书需 --previous-apk 和 --allow-legacy-debug-upgrade')
+    if args.allow_legacy_debug_upgrade:
+        if not args.previous_apk:
+            raise ValueError('沿用原调试证书必须提供 --previous-apk')
+        if args.allow_certificate_change:
+            raise ValueError('沿用原调试证书不能同时允许签名迁移')
     if args.allow_certificate_change and not args.previous_apk:
         raise ValueError('签名迁移必须提供 --previous-apk，核对原版本后才能明确记录升级限制')
     previous = inspect_apk(args.previous_apk.resolve(strict=True), tools_dir) if args.previous_apk else None
@@ -72,8 +80,12 @@ def main():
     if previous:
         if code <= previous['versionCode']:
             raise ValueError('新 APK 的版本码必须大于上一版')
+        if args.allow_legacy_debug_upgrade and not can_upgrade:
+            raise ValueError('签名证书与上一版不同；沿用原证书模式不允许更换证书，无法覆盖升级')
         if not can_upgrade and not args.allow_certificate_change:
             raise ValueError('签名证书与上一版不同，无法覆盖升级；确认迁移后才可使用 --allow-certificate-change')
+    if args.allow_legacy_debug_upgrade and not (debug and previous['debug']):
+        raise ValueError('沿用原调试证书要求新旧 APK 都使用原调试证书')
     digest = hashlib.sha256()
     with apk.open('rb') as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b''):
@@ -81,8 +93,9 @@ def main():
     manifest = dict(versionCode=int(code), versionName=name, apkUrl=args.apk_url,
                     apkSha256=digest.hexdigest(), apkSize=apk.stat().st_size,
                     force=False, changelog=args.changelog)
+    signing = 'legacy-debug-release' if args.allow_legacy_debug_upgrade else ('debug-validation-only' if debug else 'release')
     metadata = dict(applicationId=app_id, minSdk=19, targetSdk=28, apkFile=apk.name,
-                    signing='debug-validation-only' if debug else 'release',
+                    signing=signing,
                     certificateSha256=current['certificateSha256'], **manifest)
     if previous:
         metadata.update(previousVersionCode=previous['versionCode'],
@@ -101,7 +114,9 @@ def main():
         temp.write_text(content, encoding='utf-8')
         temp.replace(output / filename)
     print(f'已验证 {app_id} v{name} (code {code})，minSdk 19，v1 签名有效')
-    print('签名类型：' + ('调试，仅供验证' if debug else '发布（升级前仍需与上一版证书比对）'))
+    signing_description = ('沿用原调试证书的兼容发布（证书一致）' if args.allow_legacy_debug_upgrade
+                           else ('调试，仅供验证' if debug else '发布（升级前仍需与上一版证书比对）'))
+    print('签名类型：' + signing_description)
     if previous:
         print('旧版升级：' + ('同证书，可覆盖安装' if can_upgrade else '证书变更，不能覆盖旧版；重新安装前须备份设置与历史'))
     print('已生成 APK、update.json、apk-info.json、signature.txt、SHA256SUMS；尚未发布')

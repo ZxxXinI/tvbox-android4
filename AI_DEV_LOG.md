@@ -397,3 +397,21 @@
 尚未创建 v0.0.2 Release、正式签名 APK 或线上 update.json；缺少原私钥/明确证书方案及已应用的 API 网络配置。设备验收仍按 docs/13 如实记录，源码提交和后续发布以 docs/15 的最新记录为准。
 
 后续提交与推送：业务源码、回归、CI 及文档提交 454390141b5cae612368b4842877a7cfad89b903，原生 Git 推送 main 成功，远端引用一致；没有创建 v0.0.2 标签。首次在线运行 https://github.com/ZxxXinI/tvbox-android4/actions/runs/37434928294 显示 Failure、32 秒、无 APK 产物；公开任务页要求登录查看日志，当前 API 网络未恢复，未认定具体根因。已更新当前报告和规划状态，后续需在 API 恢复后读取真实日志并修复。
+
+## 2026-10-06 确定沿用原证书的发布方案
+
+用户明确选择沿用 v0.0.1 的原证书、保留覆盖升级。原证书为调试证书；本轮不新建或迁移证书，仍需原 keystore 的可访问路径或已有 GitHub Actions 签名 Secrets。当前默认用户目录和工作区 keystore 的证书摘要均为云环境 0e64f475…886e2a，与公开上一版 d507b831…c1e2d6 不同；已核对公开证书信息，没有导出私钥或在日志/仓库存放口令。
+
+- 发布工具新增 --allow-legacy-debug-upgrade，仅接受提供上一版、版本递增、新旧 APK 同一调试证书；与验证模式互斥，并拒绝 --allow-certificate-change。成功材料标注 legacy-debug-release，保留上一版摘要及可覆盖安装标记，不误称新生产证书。
+- 新增 7 项策略回归，连同已有 6 项共 13 项通过。使用实际 v0.0.2 Debug APK 与公开 v0.0.1 APK 验证原证书模式，异证书被正确拒绝，未生成输出目录。Android 源码与候选 APK 未变，因此未重复全量 Android 构建。
+- 更新 docs/13、docs/15、HANDOFF 与验证报告的证书方案和继续命令。口令应配置在未提交的 local.properties 或已有 GitHub Actions Secrets；云环境网络 Secret 不能直接用于本地签名。
+
+尚未签名或发布：原 keystore/签名 Secrets 信息未提供，API 网络草稿仍待应用，首次在线 CI 失败也待 API 可用后读取日志修复。既有发布授权保留，不重复请求发布许可。
+
+### 收到原 keystore 并完成初次原证书签名
+
+用户上传 debug.keystore 并提供别名和受控签名配置。keytool 核对 androiddebugkey / PrivateKeyEntry、证书摘要 d507b831ebd7af498c550d0e24b84d1a10f218132ec9e6ce4c43d19f15c1e2d6，与公开 v0.0.1 完全相同。私钥在仓库之外保存为 0600、目录 0700，未提交、未作为发布资产、未记录口令；不再请求补充私钥信息。
+
+启用 TVBOX_REQUIRE_RELEASE_SIGNING=true，注入稳定 OTA URL，以原私钥 assembleRelease：BUILD SUCCESSFUL in 10s，40 个任务、退出码 0。实际 v1/v2、版本/SDK 和原证书连续性检查通过；prepare_release.py 的原调试证书模式接受该 APK，metadata 为 legacy-debug-release、canUpgradePreviousInstallation=true，清单、副本、大小和哈希一致。初次材料保存在 release-v0.0.2/initial-signed；源码提交后会重构建，使 APK version-control-info 指向实际用于发布的源码提交，再固定最终材料。
+
+此时原私钥阻断已解决；网络规格仍为 3，API/上传域名未应用，尚未创建 v0.0.2 Release 或更新线上清单。在线 CI 的真实错误仍需 API 可用后读取并修复。

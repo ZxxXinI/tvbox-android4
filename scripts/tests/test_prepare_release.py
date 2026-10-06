@@ -29,6 +29,7 @@ class PrepareReleaseTest(unittest.TestCase):
         self.old_certificate = self.certificate
         self.v1 = True
         self.debug = False
+        self.old_debug = False
         self.output = self.root / 'output'
 
     def binary_output(self, *args):
@@ -36,7 +37,7 @@ class PrepareReleaseTest(unittest.TestCase):
         if Path(args[0]).name == 'aapt':
             return "package: name='com.tvbox.android44' versionCode='%d' versionName='fixture'\nsdkVersion:'19'\ntargetSdkVersion:'28'\n" % (1 if old else self.code)
         return ('Verified using v1 scheme (JAR signing): %s\nSigner #1 certificate DN: CN=%s\nSigner #1 certificate SHA-256 digest: %s\n'
-                % ('true' if old or self.v1 else 'false', 'Android Debug' if self.debug and not old else 'Fixture',
+                % ('true' if old or self.v1 else 'false', 'Android Debug' if (self.old_debug if old else self.debug) else 'Fixture',
                    self.old_certificate if old else self.certificate))
 
     def invoke(self, *extra):
@@ -84,6 +85,56 @@ class PrepareReleaseTest(unittest.TestCase):
         self.debug = True
         with self.assertRaisesRegex(ValueError, '调试签名'):
             self.invoke()
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_debug_upgrade_records_original_certificate_release(self):
+        self.debug = self.old_debug = True
+        self.invoke('--allow-legacy-debug-upgrade')
+        metadata = json.loads((self.output / 'apk-info.json').read_text())
+        self.assertEqual('legacy-debug-release', metadata['signing'])
+        self.assertTrue(metadata['canUpgradePreviousInstallation'])
+        self.assertEqual(self.old_certificate, metadata['certificateSha256'])
+
+    def test_legacy_debug_upgrade_rejects_another_debug_certificate(self):
+        self.debug = self.old_debug = True
+        self.certificate = 'b' * 64
+        with self.assertRaisesRegex(ValueError, '无法覆盖升级'):
+            self.invoke('--allow-legacy-debug-upgrade')
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_debug_upgrade_requires_previous_apk(self):
+        self.debug = self.old_debug = True
+        args = ['prepare_release', '--apk', str(self.current), '--apk-url', 'https://example.com/app-release.apk',
+                '--output-dir', str(self.output), '--build-tools', str(self.root), '--allow-legacy-debug-upgrade']
+        with patch.object(sys, 'argv', args), patch.object(release, 'run', side_effect=self.binary_output):
+            with self.assertRaisesRegex(ValueError, '必须提供 --previous-apk'):
+                release.main()
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_debug_upgrade_rejects_certificate_migration_flag(self):
+        self.debug = self.old_debug = True
+        with self.assertRaisesRegex(ValueError, '不能同时允许签名迁移'):
+            self.invoke('--allow-legacy-debug-upgrade', '--allow-certificate-change')
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_debug_upgrade_still_requires_higher_version(self):
+        self.debug = self.old_debug = True
+        self.code = 1
+        with self.assertRaisesRegex(ValueError, '版本码'):
+            self.invoke('--allow-legacy-debug-upgrade')
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_debug_upgrade_rejects_non_debug_certificate(self):
+        with self.assertRaisesRegex(ValueError, '新旧 APK 都使用原调试证书'):
+            self.invoke('--allow-legacy-debug-upgrade')
+        self.assertFalse(self.output.exists())
+
+    def test_legacy_debug_upgrade_cannot_be_mixed_with_validation_mode(self):
+        self.debug = self.old_debug = True
+        with contextlib.redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit) as error:
+                self.invoke('--allow-legacy-debug-upgrade', '--allow-debug-signing')
+        self.assertEqual(2, error.exception.code)
         self.assertFalse(self.output.exists())
 
 
