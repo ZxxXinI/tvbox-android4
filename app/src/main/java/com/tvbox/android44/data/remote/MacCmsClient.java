@@ -67,8 +67,7 @@ public class MacCmsClient {
 
         Request request = new Request.Builder().url(url.toString()).get().build();
         long startedAt = android.os.SystemClock.elapsedRealtime();
-        String body = HttpExecutor.executeForString(HttpClients.withTimeout(timeoutMs),
-                request, scope);
+        String body = SourceRequestGate.execute(request, timeoutMs, scope);
         if (com.tvbox.android44.BuildConfig.DEBUG) {
             // 诊断日志：仅路径形态、响应长度与耗时，不含查询参数与完整响应
             android.util.Log.d("TVBOX_MACCMS", "query ids=" + (ids != null && !ids.isEmpty())
@@ -87,8 +86,7 @@ public class MacCmsClient {
             url.append("&t=").append(encode(typeId));
         }
         Request request = new Request.Builder().url(url.toString()).get().build();
-        String body = HttpExecutor.executeForString(HttpClients.withTimeout(timeoutMs),
-                request, scope);
+        String body = SourceRequestGate.execute(request, timeoutMs, scope);
         return parseBody(body);
     }
 
@@ -96,8 +94,7 @@ public class MacCmsClient {
     public VodResponseDto listCategories(String baseUrl, long timeoutMs,
                                          @Nullable CancelScope scope) throws IOException {
         Request request = new Request.Builder().url(baseUrl + "?ac=list&pg=1").get().build();
-        String body = HttpExecutor.executeForString(HttpClients.withTimeout(timeoutMs),
-                request, scope);
+        String body = SourceRequestGate.execute(request, timeoutMs, scope);
         return parseBody(body);
     }
 

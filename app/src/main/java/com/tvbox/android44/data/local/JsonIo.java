@@ -52,10 +52,7 @@ public final class JsonIo {
         } catch (Exception e) {
             // 保留损坏备份
             File backup = new File(file.getParentFile(), file.getName() + ".corrupt");
-            boolean renamed = file.renameTo(backup);
-            if (!renamed) {
-                file.delete();
-            }
+            file.renameTo(backup); // If backup fails, preserve the original for recovery.
             return null;
         }
     }
@@ -65,21 +62,23 @@ public final class JsonIo {
         if (parent != null && !parent.exists()) {
             parent.mkdirs();
         }
-        File tmp = new File(file.getParentFile(), file.getName() + ".tmp");
-        FileOutputStream fos = new FileOutputStream(tmp);
-        OutputStreamWriter w = new OutputStreamWriter(fos, Charset.forName("UTF-8"));
+        if (parent != null && !parent.isDirectory()) throw new IOException("无法创建存储目录");
+        File tmp = File.createTempFile(file.getName(), ".tmp", parent);
         try {
-            fos.write(BOM);
-            w.write(GSON.toJson(value));
-            w.flush();
+            FileOutputStream fos = new FileOutputStream(tmp);
+            OutputStreamWriter w = new OutputStreamWriter(fos, Charset.forName("UTF-8"));
+            try {
+                fos.write(BOM);
+                w.write(GSON.toJson(value));
+                w.flush();
+                fos.getFD().sync();
+            } finally {
+                w.close();
+            }
+            // Android/Linux rename replaces atomically; never delete the last good file first.
+            if (!tmp.renameTo(file)) throw new IOException("无法落盘 " + file.getName());
         } finally {
-            w.close();
-        }
-        if (file.exists() && !file.delete()) {
-            throw new IOException("无法替换 " + file.getName());
-        }
-        if (!tmp.renameTo(file)) {
-            throw new IOException("无法落盘 " + file.getName());
+            if (tmp.exists()) tmp.delete();
         }
     }
 }

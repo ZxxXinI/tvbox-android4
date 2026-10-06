@@ -21,6 +21,11 @@ public final class SearchResultMerger {
         final Map<String, Movie> byKey = new HashMap<String, Movie>();
 
         public void add(Movie m) {
+            add(m, false);
+        }
+
+        /** A late preferred source replaces metadata at the existing position. */
+        public void add(Movie m, boolean preferred) {
             if (m == null) return;
             String key = NameNormalizer.dedupeKey(m.name, m.year);
             Movie exist = byKey.get(key);
@@ -33,7 +38,16 @@ public final class SearchResultMerger {
                 }
                 return;
             }
-            // 主来源优先：首现即保留；补充可用来源记录
+            if (preferred && !exist.apiLineId.equals(m.apiLineId)) {
+                fillMissing(m, exist);
+                for (String source : exist.availableSourceIds) {
+                    if (!m.availableSourceIds.contains(source)) m.availableSourceIds.add(source);
+                }
+                if (!m.availableSourceIds.contains(m.apiLineId)) m.availableSourceIds.add(m.apiLineId);
+                byKey.put(key, m);
+                movies.set(order.indexOf(key), m);
+                return;
+            }
             if (!exist.availableSourceIds.contains(m.apiLineId)) {
                 exist.availableSourceIds.add(m.apiLineId);
             }

@@ -8,13 +8,20 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentTransaction;
 
 import com.tvbox.android44.R;
+import com.tvbox.android44.BuildConfig;
+import com.tvbox.android44.app.TvBoxApp;
+import com.tvbox.android44.common.Result;
+import com.tvbox.android44.common.TvDialogs;
+import com.tvbox.android44.data.repository.UpdateRepository;
+import com.tvbox.android44.domain.model.AppUpdate;
 import com.tvbox.android44.common.FocusUtils;
+import com.tvbox.android44.common.PageFocusState;
+import com.tvbox.android44.common.BaseActivity;
 import com.tvbox.android44.feature.history.HistoryFragment;
 import com.tvbox.android44.feature.home.HomeFragment;
 import com.tvbox.android44.feature.recommend.RecommendFragment;
@@ -29,7 +36,7 @@ import java.util.Map;
  * 默认内容为首页（热播/分类/海报网格）；数字键 1~6 快速导航；
  * 返回键逐级回退到首页；show/hide 保留各页状态与焦点。
  */
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends BaseActivity {
 
     /** 内容页：HOME 为默认首页内容，其余对应顶部六个入口。 */
     public enum Tab {
@@ -39,8 +46,12 @@ public class MainActivity extends AppCompatActivity {
     private static final String STATE_TAB = "main_tab";
 
     private final Map<Tab, Fragment> fragments = new HashMap<Tab, Fragment>();
+    private final Map<Tab, Bundle> focusStates = new HashMap<Tab, Bundle>();
     private Tab current = Tab.HOME;
     private long lastBackAt;
+    private UpdateRepository.CheckHandle startupCheck;
+    private long startupToken;
+    private androidx.appcompat.app.AlertDialog startupPrompt;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -51,15 +62,68 @@ public class MainActivity extends AppCompatActivity {
         bindNav(R.id.nav_search, Tab.SEARCH);
         bindNav(R.id.nav_recommend, Tab.RECOMMEND);
         bindNav(R.id.nav_settings, Tab.SETTINGS);
+        getWindow().getDecorView().getViewTreeObserver().addOnGlobalFocusChangeListener(
+                new android.view.ViewTreeObserver.OnGlobalFocusChangeListener() {
+                    public void onGlobalFocusChanged(View oldFocus, View newFocus) {
+                        Fragment page = fragments.get(current);
+                        if (page != null && page.getView() != null && page.getView().findFocus() == newFocus) {
+                            Bundle bookmark = PageFocusState.capture(page.getView(), newFocus);
+                            if (!bookmark.isEmpty()) focusStates.put(current, bookmark);
+                        }
+                    }
+                });
 
         Tab restore = Tab.HOME;
         if (savedInstanceState != null && savedInstanceState.containsKey(STATE_TAB)) {
+            for (Tab tab : Tab.values()) {
+                Bundle bookmark = savedInstanceState.getBundle("focus_" + tab.name());
+                if (bookmark != null) focusStates.put(tab, bookmark);
+            }
             try {
                 restore = Tab.valueOf(savedInstanceState.getString(STATE_TAB));
             } catch (IllegalArgumentException ignored) {
             }
         }
         selectTab(restore, false);
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        final TvBoxApp app = TvBoxApp.get();
+        final long token = app.startupUpdates().begin(app.settings().checkUpdateOnStart(),
+                app.updates().manifestUrl(), android.os.SystemClock.elapsedRealtime());
+        if (token == 0) return;
+        startupToken = token;
+        startupCheck = app.updates().check(new UpdateRepository.CheckCallback() {
+            @Override public void onResult(Result<AppUpdate> result) {
+                if (startupToken != token || isFinishing() || isDestroyed()) return;
+                app.startupUpdates().complete(token, android.os.SystemClock.elapsedRealtime());
+                startupToken = 0;
+                startupCheck = null;
+                final AppUpdate update = result.data();
+                if (!result.isSuccess() || update == null || update.versionCode <= BuildConfig.VERSION_CODE
+                        || !app.startupUpdates().claimPrompt(update.versionCode)) return;
+                startupPrompt = TvDialogs.confirm(MainActivity.this, getString(R.string.update_available_title),
+                        getString(R.string.startup_update_message, update.versionName), new TvDialogs.ConfirmListener() {
+                            @Override public void onConfirm() {
+                                selectTab(Tab.SETTINGS, false);
+                                getSupportFragmentManager().executePendingTransactions();
+                                Fragment page = fragments.get(Tab.SETTINGS);
+                                if (page instanceof SettingsFragment) ((SettingsFragment) page).offerStartupUpdate(update);
+                            }
+                        });
+            }
+        });
+    }
+
+    @Override protected void onStop() {
+        if (startupCheck != null) startupCheck.cancel();
+        startupCheck = null;
+        TvBoxApp.get().startupUpdates().cancel(startupToken);
+        startupToken = 0;
+        if (startupPrompt != null) startupPrompt.dismiss();
+        startupPrompt = null;
+        super.onStop();
     }
 
     private void bindNav(int viewId, final Tab tab) {
@@ -100,19 +164,21 @@ public class MainActivity extends AppCompatActivity {
             ft.show(f);
         }
         fragments.put(tab, f);
-        ft.commitAllowingStateLoss();
-
-        if (fromUser) {
-            final Fragment shown = f;
-            // 显示后恢复焦点：若当前无焦点则落到该页第一个可聚焦控件
-            getSupportFragmentManager().executePendingTransactions();
-            if (shown.getView() != null && shown.getView().findFocus() == null) {
-                View first = FocusUtils.firstFocusable(shown.getView());
-                if (first != null) {
-                    first.requestFocus();
+        final Fragment shown = f;
+        final Tab selected = tab;
+        ft.runOnCommit(new Runnable() {
+            public void run() {
+                if (current != selected || shown.getView() == null) return;
+                Bundle bookmark = focusStates.get(selected);
+                if (shown instanceof PageFocusState.Owner && bookmark != null) {
+                    ((PageFocusState.Owner) shown).restorePageFocus(bookmark);
+                } else if (!PageFocusState.restore(shown.getView(), bookmark) && fromUser) {
+                    View first = FocusUtils.firstFocusable(shown.getView());
+                    if (first != null) first.requestFocus();
                 }
             }
-        }
+        });
+        ft.commitAllowingStateLoss();
     }
 
     private Fragment createTab(Tab tab) {
@@ -145,6 +211,7 @@ public class MainActivity extends AppCompatActivity {
     /** 从推荐页携带查询词跳转搜索。 */
     public void switchToSearchWithQuery(String query) {
         selectTab(Tab.SEARCH, false);
+        getSupportFragmentManager().executePendingTransactions();
         Fragment f = fragments.get(Tab.SEARCH);
         if (f instanceof SearchFragment) {
             ((SearchFragment) f).presetQuery(query);
@@ -155,6 +222,9 @@ public class MainActivity extends AppCompatActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_TAB, current.name());
+        for (Map.Entry<Tab, Bundle> entry : focusStates.entrySet()) {
+            outState.putBundle("focus_" + entry.getKey().name(), entry.getValue());
+        }
     }
 
     @Override

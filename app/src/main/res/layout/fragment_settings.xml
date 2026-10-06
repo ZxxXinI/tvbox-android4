@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/settings_scroll"
     android:layout_width="match_parent"
@@ -18,7 +18,7 @@
         <!-- ===== 外观 ===== -->
         <TextView
             style="@style/SettingsSectionHeader"
-            android:text="外观" />
+            android:text="@string/appearance" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -42,7 +42,7 @@
         <!-- ===== 视频源 ===== -->
         <TextView
             style="@style/SettingsSectionHeader"
-            android:text="视频源" />
+            android:text="@string/video_sources" />
 
         <TextView
             android:id="@+id/settings_api"
@@ -64,7 +64,7 @@
                 style="@style/Widget.Tv.NavButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="添加自定义源" />
+                android:text="@string/add_custom_source" />
 
             <TextView
                 android:id="@+id/settings_api_manage"
@@ -72,7 +72,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="14dp"
-                android:text="管理自定义源" />
+                android:text="@string/manage_custom_sources" />
 
             <TextView
                 android:id="@+id/settings_api_qr"
@@ -80,13 +80,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="14dp"
-                android:text="扫码添加接口" />
+                android:text="@string/qr_add_source" />
         </LinearLayout>
 
         <!-- ===== AI 推荐 ===== -->
         <TextView
             style="@style/SettingsSectionHeader"
-            android:text="AI 推荐" />
+            android:text="@string/ai_recommend" />
 
         <TextView
             android:id="@+id/settings_ai_provider"
@@ -125,12 +125,12 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginTop="10dp"
-            android:text="扫码配置 AI" />
+            android:text="@string/qr_ai_title" />
 
         <!-- ===== 播放管家 ===== -->
         <TextView
             style="@style/SettingsSectionHeader"
-            android:text="播放管家" />
+            android:text="@string/playback_manager" />
 
         <LinearLayout
             android:layout_width="match_parent"
@@ -149,7 +149,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="14dp"
-                android:text="线路统计" />
+                android:text="@string/line_stats" />
 
             <TextView
                 android:id="@+id/settings_stats_clear"
@@ -157,13 +157,13 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="14dp"
-                android:text="清空统计" />
+                android:text="@string/clear_stats" />
         </LinearLayout>
 
         <!-- ===== 版本更新 ===== -->
         <TextView
             style="@style/SettingsSectionHeader"
-            android:text="版本更新" />
+            android:text="@string/version_update" />
 
         <TextView
             android:id="@+id/settings_version"
@@ -190,7 +190,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginLeft="14dp"
-                android:text="检查更新" />
+                android:text="@string/check_update" />
         </LinearLayout>
 
         <ProgressBar
@@ -222,7 +222,7 @@
             <!-- ===== 扩展服务（暂时隐藏）===== -->
             <TextView
                 style="@style/SettingsSectionHeader"
-                android:text="扩展服务" />
+                android:text="@string/extension_services" />
 
             <LinearLayout
                 android:layout_width="match_parent"
@@ -245,7 +245,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginLeft="14dp"
-                    android:text="测试" />
+                    android:text="@string/test_service" />
             </LinearLayout>
 
             <LinearLayout
@@ -270,7 +270,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginLeft="14dp"
-                    android:text="测试" />
+                    android:text="@string/test_service" />
             </LinearLayout>
         </LinearLayout>
     </LinearLayout>

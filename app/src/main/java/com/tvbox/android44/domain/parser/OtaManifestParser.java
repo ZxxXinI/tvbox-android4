@@ -37,7 +37,8 @@ public final class OtaManifestParser {
             throw new ManifestException("缺少 versionCode");
         }
         try {
-            u.versionCode = root.get("versionCode").getAsInt();
+            u.versionCode = new java.math.BigDecimal(root.get("versionCode").getAsString()).intValueExact();
+            if (u.versionCode <= 0) throw new IllegalArgumentException();
         } catch (Exception e) {
             throw new ManifestException("versionCode 非法");
         }
@@ -49,18 +50,31 @@ public final class OtaManifestParser {
         if (u.apkUrl.isEmpty()) {
             throw new ManifestException("缺少 apkUrl");
         }
-        if (!u.apkUrl.startsWith("http://") && !u.apkUrl.startsWith("https://")) {
+        okhttp3.HttpUrl apkUrl = okhttp3.HttpUrl.parse(u.apkUrl);
+        if (apkUrl == null || apkUrl.host().isEmpty()) {
             throw new ManifestException("apkUrl 非法");
         }
-        u.apkSha256 = optString(root, "apkSha256");
+        u.apkSha256 = optString(root, "apkSha256").toLowerCase(java.util.Locale.ROOT);
+        if (!u.apkSha256.matches("[0-9a-f]{64}")) {
+            throw new ManifestException("apkSha256 必须为 64 位 SHA-256");
+        }
         if (root.has("apkSize")) {
             try {
-                u.apkSize = root.get("apkSize").getAsLong();
-            } catch (Exception ignored) {
-                u.apkSize = 0;
+                u.apkSize = new java.math.BigDecimal(root.get("apkSize").getAsString()).longValueExact();
+                if (u.apkSize < 0) {
+                    throw new IllegalArgumentException();
+                }
+            } catch (Exception e) {
+                throw new ManifestException("apkSize 非法");
             }
         }
-        u.force = root.has("force") && root.get("force").getAsBoolean();
+        try {
+            if (root.has("force") && (!root.get("force").isJsonPrimitive()
+                    || !root.getAsJsonPrimitive("force").isBoolean())) throw new IllegalArgumentException();
+            u.force = root.has("force") && root.get("force").getAsBoolean();
+        } catch (Exception e) {
+            throw new ManifestException("force 非法");
+        }
         if (root.has("changelog") && root.get("changelog").isJsonArray()) {
             for (com.google.gson.JsonElement el : root.getAsJsonArray("changelog")) {
                 if (el.isJsonPrimitive()) {

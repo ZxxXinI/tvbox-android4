@@ -1,96 +1,92 @@
-﻿# 完成度与未验证项报告（2026-08-30，API19 模拟器验证后更新）
+﻿# 当前验证报告
 
-对照 `docs/00~12` 全部规则与 `HANDOFF.md` 任务清单的核对结论。区分口径遵循文档 00 §7：**已实现 / 已构建 / 已在实机验证 / 受环境限制未承诺**。
+日期：2026-10-06。范围：P1/P2 规划补全、文案与列表整理及 v0.0.2 发布准备；默认版本 `0.0.2` / code `2`。此前 v0.0.1 验证结果保留在开发日志，原验证包已备份；本报告对应最新候选版本，不代表 GitHub Release 已发布。
 
-## 0. API 19 验证结果（2026-08-30 追加）✅ 已完成模拟器层验证
+## 结论
 
-代理恢复后经 sdkmanager 成功安装 `system-images;android-19;default;x86` + `platforms;android-19`，创建 `rev19` AVD（tv_720p 1280×720、KVM）完成回归。**发现并修复 3 个真实缺陷**：
+- Debug 与 Release 各 **181 项测试、31 个测试类**，失败/错误/跳过均为 0；本轮新增 **65 项、10 个测试类**。
+- `assembleDebug` 与开启 R8/资源收缩的 `assembleRelease` 成功。
+- `lintDebug` 与 `lintRelease` 均为 **0 Error / 0 Fatal / 44 Warning**；上轮为 126 条警告，当前布局 `HardcodedText` 为 0。
+- 候选 APK 均为 `com.tvbox.android44`、minSdk **19**、targetSdk **28**、版本 `0.0.2 / 2`。Debug 的 v1/v2 签名验证通过；最终 Release 候选刻意保持**未签名**，不能安装或用于 OTA。
+- Debug 包含 3 个 DEX，Release 为 1 个；Debug 已启用 AndroidX Multidex 2.0.1，在 attachBaseContext 安装。静态核对主 DEX 包含 TvBoxApp、MultiDex 及构造时引用的 StartupUpdatePolicy。
+- 发布工具 **6 项回归通过**，新增上一版版本码递增与证书连续性检查。实际云环境验证包因与 v0.0.1 证书不同而被正确拒绝，未生成可上传的清单。
+- 原签名私钥缺失；GitHub API CONNECT 被代理拒绝，放行配置草稿已保存但尚未应用。尚未创建正式 APK、v0.0.2 Release 或线上 update.json。
+- 无连接 ADB 设备、无 `/dev/kvm`；本轮没有真实设备安装、解码、遥控器、手机局域网或同证书 OTA 升级结果。
 
-1. **Multidex 安装时机错误（API19 必崩）**：`MultiDex.install()` 原在 `Application.onCreate`，而 API<21 上 FileProvider 等 ContentProvider 在 onCreate 之前实例化 → `ClassNotFoundException: androidx.core.content.FileProvider` 冷启动即崩。已移至 `attachBaseContext()`。
-2. **TLSv1.2 未显式启用（API19 全网失败）**：Android 4.x SSLSocket 默认关闭 TLS1.2，OkHttp 3.12 仅 API20+ 自动启用 → 实测 96 次 `SSL handshake aborted`。新增 `Tls12SocketFactory`（API<22 显式启用 TLS1.2，不改信任策略、不禁用校验），修复后握手失败 **96 → 0**，量子源（HTTPS MacCMS）列表/搜索/详情在 API19 全部可用。
-3. **详情接口播放串被丢弃（全平台缺陷，API19 排查揭出）**：`MacCmsMapper.toPagedMovies` 硬编码 `toMovie(..., includePlays=false)`，详情路径（doFetchDetail）因此**主线路永远丢失**——此前所有影片的线路全部来自补线，且是"默认线路空集"问题的根源。新增 `toPagedMovies(apiLine, dto, includePlays)` 重载，详情路径传 true；补回归单测；真机复测详情线路数 6→7（主线路首次出现）。
+## 执行环境与命令
 
-**API19 模拟器上已验证**：安装、冷启动（修复后无崩溃）、默认主题首页、豆瓣失败→回退当前接口（文案正确）、多来源搜索执行与空态、详情（元数据/2 条线路/推荐线路选中/集数渲染）、播放失败错误态（重试/返回按钮）。
+JDK 17.0.20.1、Gradle 8.10.2、AGP 8.7.3、SDK platform 35、build-tools 34.0.0/35.0.0。依赖来自官方 Google、MavenCentral 和 Plugin Portal；Gradle 分发配置 SHA-256。Robolectric 4.10.3 仅为测试依赖，当前用例覆盖 API 19/23/28。
 
-**API19 上仍受系统硬限制的项**：
-- **播放 CDN 握手**：量子播放 CDN `v.lzcdn34.com` 的 TLS1.2 仅提供 AES-GCM 套件，而 Android 4.4 系统栈无任何 GCM 套件（API20+ 才引入）→ 该类 CDN 在 API19 上无法握手，属**系统硬限制**。对策即文档 02 §7 预判的"服务端受控 HTTPS 兼容代理"或 http 源；客户端不得为此关闭校验（未做任何降级）。
-- **豆瓣 HTTPS**：API19 仍不可达（其 CDN TLS 要求超出 4.4 能力），但失败→缓存→回退 MacCMS 链路完整工作，不影响可用性。
-- 模拟器 NAT 无法访问宿主本地端口（adb reverse 需 API21+），本地 mock 闭环不可行；播放解码验证以真机（API28）+ 公共源完成。
+```bash
+bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease \
+  --no-daemon --max-workers=4 --console=plain
+```
 
-## 1. 本轮已完成（附证据）
+最终输出：`BUILD SUCCESSFUL in 1m 52s`；`98 actionable tasks: 53 executed, 45 up-to-date`。
 
-| 项 | 证据层级 |
+最终日志：`/workspace/.cloud-setup/tvbox/logs/release-v0.0.2-validation.log`。本次全量验证使用空默认 OTA 地址，防止测试请求外部服务；之后另行注入正式清单地址构建未签名候选。云环境需先激活 `/workspace/.cloud-setup/tvbox/env.sh`；普通开发机按 README 设置 JDK/SDK。
+
+发布策略回归：`python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v`，6 项全部通过，覆盖递增版本、同证书、明确证书迁移、v1 和调试证书拒绝。
+
+未签名候选使用本地 `unsigned.init.gradle` 在 Android DSL 完成前移除 Release 签名配置，并注入 `https://github.com/ZxxXinI/tvbox-android4/releases/latest/download/update.json`。构建日志 `release-v0.0.2-unsigned-final.log` 为 `BUILD SUCCESSFUL in 11s`，39 个任务；实际 APK 经 aapt、ZIP 和 apksigner 核对，版本/SDK 正确、含该清单地址且确实未签名。正式发布必须另用受控私钥完成签名并重新计算哈希。
+
+## 本轮新增回归
+
+| 测试类 | 项数 | 场景 |
+| --- | ---: | --- |
+| HealthStoreTest | 6 | 后台初始化、顺序写入/清空、重启、独立快照、坏记录/损坏备份、30 天/300 条、慢缓冲时间、写失败与计数边界 |
+| PlaybackSelectionTest | 6 | 线路标识变化、同名线路、剧集重排、标题匹配、索引兜底、近片尾下一集/最后一集与返回策略 |
+| PlayerFlowTest | 14 | 实际 Activity 启动/结果/详情焦点；阻塞磁盘仍返回最新状态；持续/频繁缓冲、暂停/seek/开关、用尽线路、停止释放、一次格式回退；旧 URL、自然下一集/最后一集、暂停保存与重建 |
+| VodMediaSourcesTest | 2 | URL path 和查询参数区分、实际响应 MIME、无额外探测请求 |
+| StartupUpdatePolicyTest | 4 | 开关/空地址、并发去重、15 分钟节流、旧 token 取消隔离与新版本单次提示 |
+| StartupUpdateFlowTest | 6 | 本地真实清单 HTTP；启动开启/关闭/空地址/500 静默、重建去重、停止取消；确认仅进入设置，无安装授权 |
+| ConfigHttpServerTest | 8 | 真实回环 Socket，UTF-8 字节长度与成功响应、一次性提交、主动到期、旧回调/新模式隔离、5 次失败、非法请求、端口占用、连续开关 10 次 |
+| AiClientTest | 5 | 四提供方 URL、授权头/模型/messages、HTTP 401/403/429、空/异常结构、URL 规范化、真实读取超时和取消 |
+| RecommendRepositoryTest | 5 | 单工作线程完成请求、错误分类、取消在途/已排队/未配置结果、新请求可继续 |
+| RecommendFlowTest | 9 | 新问题取消旧结果、重复提交、错误 Key 保留上一批、隐藏/重建、不抢导航焦点、重复/重排卡片、无语音服务、API 23 权限和销毁后语音结果 |
+
+这 65 项连同此前 116 项一起通过 Debug/Release。既有 OTA 下载校验与安装 Intent、分类聚合/共享请求/并发 3、多源搜索、详情补线、历史存储、导航焦点与领域解析回归继续通过。测试只使用本地夹具与测试 Key，不请求用户源或真实模型。
+
+播放器用例使用受控 ExoPlayer 接口与假时钟，验证 Activity 接入和决策；媒体用例验证创建/响应头/回退策略，不能证明真实 MP4 或无扩展名 HLS 已出画出声。Robolectric 不能验证设备解码器、固件安装器、真实语音服务、遥控器或渲染裁切。Release 单元测试运行 Release 源集，R8 APK 的实际运行仍需设备。
+
+## 实际改动入口
+
+| 范围 | 主要文件 |
 | --- | --- |
-| 单元测试 12 类 69 用例（播放串/HTML/规范化/内容过滤/合并/IPTV/AI/OTA/卡顿/换线/MacCMS 映射/历史条目） | 自动化：`testDebugUnitTest` 全绿 |
-| 实机（小米电视 2304FPN6DG，Android 9 / API 28，1600×900，Wi-Fi）：冷启动、豆瓣热播+海报、多来源搜索（8/8 线路 38 结果）、详情补线（6 线路）、HLS（rym3u8）播放出画、seek±10s、控制层、历史写入、断点续播入口、AI 未配置降级、错误 Key 401 路径、扫码配置端到端（表单→保存→掩码→会话关闭→端口释放确认）、平台直播/IPTV 离线错误态、25 次快速按键无崩溃 | 运行证据（API 28 实机） |
-| API 19 模拟器（x86 tv_720p，KVM）：安装/冷启动/首页降级/搜索/详情线路/集数/播放错误态；Multidex 时机与 TLS1.2 两处 API19 专属修复实测生效；真实解码受 CDN GCM-cipher 系统限制（§0） | 运行证据（API 19 模拟器） |
-| 影院主题首页（左侧图标导航+Hero 播放/详情+网格）、主题切换后页签恢复 | 运行证据（API 28 实机） |
-| Release R8 构建并实机验证（首页/搜索/详情含主线路/集数/播放/历史恢复） | 运行证据（API 28 实机） |
-| README.md、update.json.example | 交付物 |
-| lint：175→116 条（修复 DefaultLocale 13、UnusedResources 2；禁用不适用的 RTL 检查） | 静态：`lintDebug` 0 错误 |
-| 合并清单 `minSdkVersion=19`、依赖树无 Media3/Compose/OkHttp4 | 静态 |
+| 播放与详情 | `feature/player/PlayerActivity.java`、`VodMediaSources.java`、`feature/detail/DetailActivity.java`、`EpisodeAdapter.java`、`feature/history/HistoryFragment.java`、`domain/playback/PlaybackSelection.java`、`WatchHistoryItem.java` |
+| 健康存储与组装 | `data/local/HealthStore.java`、`domain/model/LineHealth.java`、`app/TvBoxApp.java`、`feature/settings/SettingsFragment.java` |
+| AI 与页面 | `data/remote/AiClient.java`、`data/repository/RecommendRepository.java`、`feature/recommend/RecommendFragment.java` |
+| 更新与扫码 | `feature/main/MainActivity.java`、`domain/update/StartupUpdatePolicy.java`、`feature/settings/ConfigHttpServer.java`、`SettingsFragment.java`、`SettingsRepository.java`、`common/AppConstants.java` |
+| 文案与列表 | `common/ui/ChipAdapter.java`、`EpisodeAdapter.java`、推荐列表、`res/values/strings.xml` 与 13 个布局 |
+| 回归与文档 | 上述 10 个新增测试类；根 README/HANDOFF/CHANGELOG/开发日志/本报告，docs/06、07、09、10、13、14 与文档入口 |
+| 发布准备 | `app/build.gradle` 版本 0.0.2/2；`scripts/prepare_release.py` 与 `scripts/tests/test_prepare_release.py`；CI 发布策略检查；docs/15 |
 
-## 2. 本轮发现并修复的 9 个缺陷
+Java 路径相对 `app/src/main/java/com/tvbox/android44/`；详细行为与验收条件见 [规划状态](docs/14-文档规划复查与待补任务.md)。R8 规则继续保留 Gson 存储/领域字段和 Serializable 历史模型；已核对 HealthMap 和 WatchHistoryItem 的映射。
 
-### 单测揭出（2）
-1. **IPTV `$` 解析语义与文档 08 相反**：文档规定 URL 在 `$` 前、元数据在后；按文档格式原实现会整条丢弃频道。已改为文档主格式 + 兼容 `meta$url` 变体，`extractHttpUrl` 遇 `$` 截断。
-2. **HtmlCleaner 数字实体解码结果未返回**（`return s` 应为 `return sb.toString()`）。
-3. **Glide 注解处理器未配置**：`annotationProcessor libs.glide` 用了运行库而非 `glide:compiler`，`GeneratedAppGlideModule` 从未生成，图片走 HttpURLConnection 且无 Referer/UA → 豆瓣海报全部 404。修复后海报正常。
-4. **OkHttpStreamFetcher 在 Glide 读取前关闭响应体**（`finally response.close()`）→ 全部图片 `IOException: closed`。改为持有响应、`cleanup()` 释放。
-5. **recreate() 后 Fragment 叠加**（换主题/字体/视频源后新旧页签内容重叠）：selectTab 改为按 tag 复用恢复的 Fragment 并隐藏全部现存实例。
-6. **详情默认线路可能为空集线路**：主详情先以空集线路渲染时，补线到达后不重选；播放提示"没有可播放的集数"。修复：`onLineAppended` 时若当前线路无集数则自动切到 `defaultLineId` 的非空集线路。
+## APK 与发布材料
 
-### API19 模拟器揭出（3，编号 7~9，详见 §0）
-7. **Multidex 安装时机错误**：`MultiDex.install()` 在 `onCreate`，API<21 上 ContentProvider 先于 onCreate 实例化 → FileProvider ClassNotFound 冷启动崩。移至 `attachBaseContext`。
-8. **TLSv1.2 未显式启用**：Android 4.x 默认关闭，OkHttp 3.12 仅 API20+ 自动启用 → 实测 96 次握手失败。新增 `Tls12SocketFactory`（API<22），修复后 0 失败。
-9. **详情接口播放串被丢弃（全平台）**：`toPagedMovies` 硬编码 `includePlays=false`，主线路永远丢失。新增重载，详情路径传 true，补回归单测；真机复测线路 6→7。
+| APK | 字节数 | SHA-256 |
+| --- | ---: | --- |
+| Debug（调试签名） | 7,648,138 | `2029b54bccbcf149c80d7cab4fd94f030feb64c04d81cb24446dd96e13fdc88e` |
+| Release（未签名候选，不能安装） | 2,909,854 | `0b5622920dba59bbf22e25f7ed85b36d923b595c744eba88bda3e9d863946c5f` |
 
-## 3. 未完成 / 未验证项及原因
+- [Debug APK](app/build/outputs/apk/debug/app-debug.apk)
+- [Release 未签名候选](app/build/outputs/apk/release/app-release-unsigned.apk)
+- [Debug 测试报告](app/build/reports/tests/testDebugUnitTest/index.html)
+- [Release 测试报告](app/build/reports/tests/testReleaseUnitTest/index.html)
+- [Debug Lint](app/build/reports/lint-results-debug.html)
+- [Release Lint](app/build/reports/lint-results-release.html)
 
-### 3.1 Android 4.4（API 19）真机验证 —— 部分完成，实机仍缺
+上一轮 v0.0.1 验证包及报告保存在 `/workspace/.cloud-setup/tvbox/release-v0.0.2/baseline/`；当前未签名包与实际验证摘要保存在 `/workspace/.cloud-setup/tvbox/release-v0.0.2/`。表中哈希只对应当前字节，完成签名后将变化，不能直接填写到正式 update.json。
 
-- **已完成（2026-08-30）**：API19 模拟器（x86，tv_720p，KVM）安装与回归，见 §0。修复 Multidex 时机、TLS1.2 启用两处 API19 专属缺陷；API19 专属的安装/启动/TLS/页面链路已验证。
-- **仍缺**：Android 4.4 **物理盒子**上的遥控器、硬解、长播、GCM 之外的真实 CDN 源验证（文档 10 §1 的最终口径）。当前无实机设备。
-- **结论口径**：可以表述为"已完成 API19 模拟器级验证，含两处 API19 专属修复"；**不得表述为**"已在 Android 4.4 真机验证"。
+已下载公开 v0.0.1 APK，并核对其证书摘要为 `d507b831ebd7af498c550d0e24b84d1a10f218132ec9e6ce4c43d19f15c1e2d6`（Android Debug）。云环境 Debug 证书为 `0e64f475052556db51387d103a43f11072afb5b676c03eeb7486737b90886e2a`，不能覆盖旧安装。实际 v0.0.2 调试签名 Release 在传入 --previous-apk 后被生成器拒绝，退出码 1、无输出目录。正式签名强检查保留；没有原私钥，不把当前验证证书替代为正式证书。
 
-### 3.2 需真实凭据/在线服务的验证 —— 未验证
+静态检查包括 `git diff --check`、Markdown UTF-8/BOM/U+FFFD/本地链接、Java/Gradle/YAML/脚本无 BOM、XML 解析与资源引用、设备脚本语法、发布脚本 Python 语法和 CI YAML 解析。当前没有 GitHub Actions 在线运行结果。源码、证书与发布进度见 [发布记录](docs/15-v0.0.2发布准备与记录.md)。
 
-| 项 | 原因 | 已覆盖部分 |
-| --- | --- | --- |
-| AI 真实成功推荐 | 无有效 API Key（本轮用假 Key 验证了 401 错误路径与请求构造） | 请求构造/解析器有单测；未配置/错误 Key 降级实机验证 |
-| 平台直播全流程（平台→分类→房间→播放） | `platform_live_server`(20.205.10.127:8868) 离线 | 离线错误态+重试实机验证；客户端容错解析有实现 |
-| IPTV 真实频道播放、切台 20 次 | 订阅源 (…:8787) 离线 | IptvTextParser 11 个单测（含 BOM/CRLF/#genre#/合并/去重） |
-| 双端扫码（真手机扫码） | 设备与开发机不同网段 | 用 `adb forward` 完成端到端等效验证（表单/保存/掩码/关会话/端口释放） |
-| OTA 全流程（下载→校验→安装） | 无真实 update.json 服务端与新版 APK | 解析器单测（BOM/缺字段）、API26+ 安装权限分支代码就位、下载校验逻辑在仓库层 |
+## 剩余警告与验收
 
-### 3.3 文档 10 §2.1 要求但缺失的单测 —— 部分缺失
+44 条非阻断警告包括 SetTextI18n 8、NotifyDataSetChanged 7、DiscouragedApi 5、布局/资源/自动填充建议及保留模块提示；完整报告保留逐条位置。允许用户配置 HTTP 视频接口的网络基线提示仍存在，HTTPS 证书验证没有放宽；API 19 空间检查保留 UsableSpace 建议。无 NewApi/InlinedApi 阻断，未提高 minSdk 或新增关闭 Lint 来通过检查。
 
-- **缺**：多来源并发上限 3 / 3 秒超时 / 取消不记失败（MultiSourceSearch 仓库层）；详情追加线路不重置选择（DetailSupplement 仓库层）；历史排序/覆盖/上限/损坏 JSON 回退（HistoryStore 依赖 Android `Context`/SharedPreferences）。
-- **原因**：仓库与存储层依赖 Android 运行环境，需引入 Robolectric 或先抽接口/纯函数重构才能 JVM 测；本轮按"改动小、可回滚"原则未做该重构。
-- **缓解**：上述链路均有 API 28 实机运行证据（8/8 来源完成、补线不重置选择实机复测、历史覆盖置顶/继续播放实测）；纯解析/决策逻辑已 100% 单测覆盖。
+设备和正式发布按 [验收清单](docs/13-当前版本基线与验收清单.md) 执行：API 19 冷启动/Multidex、真实标准/无扩展名 HLS 与 MP4、遥控器、慢流换线、持续使用、手机扫码、实际模型、API 26+ 安装授权及同证书升级。版本码已递增至 2；正式签名、公开下载与线上 CI 结果仍待完成。
 
-### 3.4 性能与稳定性长测 —— 未执行
-
-- 文档 10 §6 的 30 分钟点播/60 分钟直播+20 次切台/连续 10 页浏览不 OOM/配置服务反复开关 10 次等长时项目未跑（需要长时间在线服务与人在场听音画同步）。已做：25 次快速按键、多次冷启动、反复进出播放器，均无崩溃无泄漏日志。
-- **完成条件**：可用源稳定在线时段执行并记录。
-
-### 3.5 发布材料 —— 部分就绪
-
-- ✅ 已有：已签名（debug 证书回退）Release APK、update.json.example、README、CHANGELOG（AI_DEV_LOG 累计记录）。
-- **缺**：
-  1. **正式发布签名**（当前 release 用 debug 证书回退；正式发布必须在 local.properties 注入真实签名后重构建）。
-  2. 正式版本号（当前 versionCode=1/1.0.0，发布时需单调递增并同步 update.json）。
-  3. API 19 实机验收记录（依赖 3.1）。
-  4. 回滚旧版本 APK 的托管位置。
-
-### 3.6 lint 剩余 116 条警告 —— 未清零（有意保留）
-
-- 构成：HardcodedText 48（界面中文直写，产品允许简体中文文案；资源化收益低改动大）、NotifyDataSetChanged 11（低配设备性能提示，重构 Adapter 有回归风险）、Autofill/LabelFor（API26+ 提示，与 targetSdk 28 无关）等。
-- **决定**：全部不阻断构建与发布口径；在后续维护 Gate 中分批处理，不在本轮为清零而大改 UI 层。
-
-## 4. 结论
-
-- **代码与功能**：docs/11 的 Gate 0~9 全部实现；Gate 10 的构建/清单/示例部分完成。占位壳为零。
-- **验证**：静态 ✅、自动化 ✅（70 用例）、运行证据为 **API 28 实机**（点播主链路/搜索/详情/历史/扫码/AI 错误路径/双主题/Release R8）+ **API 19 模拟器**（安装/启动/页面/TLS/两处专属修复实测）。
-- **不能宣称**："已在 Android 4.4 真机验证"、"已完全适配所有盒子"、"支持所有 m3u8/H.265/4K"（文档 00 §7）。H.265/4K 属设备相关未承诺项。
-- **API19 真机剩余风险**：仅提供 GCM cipher 套件的 HTTPS CDN 无法握手（系统限制，需兼容代理或 http 源，见 §0）、MediaCodec 硬解可用性、遥控器按键映射、低内存长播稳定性。
+JSON 模型与现有版本兼容，未做破坏性迁移；源码回滚保留用户文档与既有数据。正式安装包回滚仍受证书与 Android 版本码限制，应保留原发布 APK/清单；当前 Debug 与未签名候选均不能作为旧用户的覆盖升级包。

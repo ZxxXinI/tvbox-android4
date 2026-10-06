@@ -48,13 +48,19 @@ public class MovieRepository {
         }
     }
 
-    private static final class InFlight {
-        final FutureTask<Result<?>> task;
-        final List<MovieRepository.Callback<?>> waiters = new ArrayList<Callback<?>>();
-
-        InFlight(FutureTask<Result<?>> task) {
-            this.task = task;
+    private static final class Waiter {
+        final Request request;
+        final Callback<?> callback;
+        Waiter(Request request, Callback<?> callback) {
+            this.request = request;
+            this.callback = callback;
         }
+    }
+
+    private static final class InFlight {
+        final CancelScope scope = new CancelScope();
+        FutureTask<Result<?>> task;
+        final List<Waiter> waiters = new ArrayList<Waiter>();
     }
 
     public interface Callback<T> {
@@ -64,22 +70,17 @@ public class MovieRepository {
     /** 可取消请求句柄。 */
     public static final class Request {
         private final CancelScope scope = new CancelScope();
-        private volatile FutureTask<Result<?>> task;
-
-        void bind(FutureTask<Result<?>> task) {
-            this.task = task;
-        }
+        private volatile Runnable cancelSubscriber;
 
         public void cancel() {
             scope.cancel();
-            FutureTask<Result<?>> t = task;
-            if (t != null) {
-                t.cancel(true);
-            }
+            Runnable cancel = cancelSubscriber;
+            if (cancel != null) cancel.run();
         }
     }
 
     private final ExecutorService executor;
+    private final ExecutorService categoryExecutor;
     private final MacCmsClient client = new MacCmsClient();
 
     private final LruCache<String, CacheEntry<PagedMovies>> listCache =
@@ -94,7 +95,12 @@ public class MovieRepository {
             new ConcurrentHashMap<String, Long>();
 
     public MovieRepository(ExecutorService executor) {
+        this(executor, TvBoxApp.get().executors().sourceRequests());
+    }
+
+    public MovieRepository(ExecutorService executor, ExecutorService categoryExecutor) {
         this.executor = executor;
+        this.categoryExecutor = categoryExecutor;
     }
 
     // ===== 冷却 =====
@@ -154,9 +160,8 @@ public class MovieRepository {
         CacheEntry<List<Category>> cached = categoryCache.get(key);
         long now = System.currentTimeMillis();
         if (cached != null && now - cached.at <= AppConstants.CATEGORY_CACHE_TTL_MS) {
-            deliverMain(cb, new Result.Success<List<Category>>(cached.value, apiLine.id, true));
             Request noop = new Request();
-            noop.bind(null);
+            deliverMain(noop, cb, new Result.Success<List<Category>>(cached.value, apiLine.id, true));
             return noop;
         }
         final Request request = new Request();
@@ -195,9 +200,8 @@ public class MovieRepository {
         long now = System.currentTimeMillis();
         if (cached != null && now - cached.at <= AppConstants.DETAIL_CACHE_TTL_MS) {
             final Result<Movie> r = new Result.Success<Movie>(cached.value, apiLine.id, true);
-            deliverMain(cb, r);
             Request noop = new Request();
-            noop.bind(null);
+            deliverMain(noop, cb, r);
             return noop;
         }
         final Request request = new Request();
@@ -253,9 +257,8 @@ public class MovieRepository {
         CacheEntry<PagedMovies> cached = listCache.get(key);
         long now = System.currentTimeMillis();
         if (cached != null && now - cached.at <= AppConstants.LIST_CACHE_TTL_MS) {
-            deliverMain(cb, new Result.Success<PagedMovies>(cached.value, apiLine.id, true));
             Request noop = new Request();
-            noop.bind(null);
+            deliverMain(noop, cb, new Result.Success<PagedMovies>(cached.value, apiLine.id, true));
             return noop;
         }
         final Request request = new Request();
@@ -312,7 +315,7 @@ public class MovieRepository {
         List<Future<PagedMovies>> futures;
         try {
             // 聚合请求整体限时，避免某个子分类失联让首页无限等待。
-            futures = executor.invokeAll(jobs, AppConstants.LIST_CALL_TIMEOUT_MS,
+            futures = categoryExecutor.invokeAll(jobs, AppConstants.LIST_CALL_TIMEOUT_MS,
                     TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
@@ -429,44 +432,35 @@ public class MovieRepository {
         T work(CancelScope scope);
     }
 
-    /** 在途合并：同 key 请求共享一个网络任务，结果分发到所有等待者（主线程）。 */
+    /** Each caller owns a subscription; only the last cancellation aborts shared IO. */
     @SuppressWarnings({"unchecked", "rawtypes"})
     private <T> void submitMerged(final String key, final Request request,
                                   final Worker<Result<T>> worker, final Callback<T> cb) {
-        InFlight entry;
         synchronized (inFlight) {
-            entry = inFlight.get(key);
-            if (entry == null) {
-                FutureTask<Result<?>> task = new FutureTask<Result<?>>(
-                        new Callable<Result<?>>() {
-                            @Override
-                            public Result<?> call() {
-                                return (Result<?>) worker.work(request.scope);
-                            }
-                        });
-                entry = new InFlight(task);
-                inFlight.put(key, entry);
-                request.bind(task);
-                executor.submit(task);
-            }
-            entry.waiters.add(cb);
-            final InFlight current = entry;
-            final FutureTask<Result<?>> boundTask = current.task;
-            if (boundTask != null && boundTask.isDone()) {
-                // 竞态兜底：立即分发
-                dispatch(current, key);
-                return;
-            }
-            executor.submit(new Runnable() {
-                @Override
+            InFlight existing = inFlight.get(key);
+            boolean created = existing == null;
+            final InFlight current = created ? new InFlight() : existing;
+            final Waiter waiter = new Waiter(request, cb);
+            current.waiters.add(waiter);
+            request.cancelSubscriber = new Runnable() {
                 public void run() {
-                    try {
-                        boundTask.get();
-                    } catch (Exception ignored) {
+                    synchronized (inFlight) {
+                        current.waiters.remove(waiter);
+                        if (current.waiters.isEmpty() && inFlight.remove(key, current)) {
+                            current.scope.cancel();
+                            current.task.cancel(true);
+                        }
                     }
-                    dispatch(current, key);
                 }
-            });
+            };
+            if (!created) return;
+            current.task = new FutureTask<Result<?>>(new Callable<Result<?>>() {
+                public Result<?> call() { return worker.work(current.scope); }
+            }) {
+                @Override protected void done() { dispatch(current, key); }
+            };
+            inFlight.put(key, current);
+            executor.execute(current.task);
         }
     }
 
@@ -475,26 +469,27 @@ public class MovieRepository {
         Result<?> result;
         try {
             result = entry.task.get();
+        } catch (java.util.concurrent.CancellationException e) {
+            result = cancelledResult();
         } catch (Exception e) {
             result = new Result.Failure<Object>(ErrorKind.OTHER, ErrorKind.OTHER.userMessage(), e);
         }
-        inFlight.remove(key);
-        List<Callback<?>> waiters;
+        List<Waiter> waiters;
         synchronized (inFlight) {
-            waiters = new ArrayList<Callback<?>>(entry.waiters);
+            inFlight.remove(key, entry);
+            waiters = new ArrayList<Waiter>(entry.waiters);
             entry.waiters.clear();
         }
-        for (Callback<?> cb : waiters) {
-            deliverMain((Callback) cb, result);
+        for (Waiter waiter : waiters) {
+            deliverMain(waiter.request, (Callback) waiter.callback, result);
         }
     }
 
     @SuppressWarnings("unchecked")
-    private static <T> void deliverMain(final Callback<T> cb, final Result<?> r) {
+    private static <T> void deliverMain(final Request request, final Callback<T> cb, final Result<?> r) {
         TvBoxApp.get().executors().main(new Runnable() {
-            @Override
             public void run() {
-                cb.onResult((Result<T>) r);
+                if (!request.scope.isCancelled()) cb.onResult((Result<T>) r);
             }
         });
     }

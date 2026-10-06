@@ -35,6 +35,9 @@ public final class FocusScaler {
 
     /** 给整个 item 根视图挂上缩放监听（保留旧监听链不覆盖）。 */
     public static void attach(View view) {
+        // Before API 26 clickable Views do not automatically become keyboard-focusable.
+        view.setFocusable(true);
+        view.setFocusableInTouchMode(true);
         final View.OnFocusChangeListener old = view.getOnFocusChangeListener();
         view.setOnFocusChangeListener(new View.OnFocusChangeListener() {
             @Override

@@ -41,8 +41,8 @@ public class MultiSourceSearch {
 
     /** 来源近期表现统计（内存，用于排序）。 */
     static final class SourceStats {
-        long lastSuccessAt;
-        long lastLatencyMs = Long.MAX_VALUE;
+        volatile long lastSuccessAt;
+        volatile long lastLatencyMs = Long.MAX_VALUE;
     }
 
     static final Map<String, SourceStats> STATS =
@@ -69,7 +69,7 @@ public class MultiSourceSearch {
         final long now = System.currentTimeMillis();
 
         // 来源顺序：主来源第一；其余按近期成功/延迟排序，排除冷却
-        ApiLine main = settings.currentApi();
+        final ApiLine main = settings.currentApi();
         List<ApiLine> ordered = new ArrayList<ApiLine>();
         ordered.add(main);
         List<ApiLine> others = new ArrayList<ApiLine>();
@@ -122,42 +122,26 @@ public class MultiSourceSearch {
 
                 private void postResult(final ApiLine line, final Result<PagedMovies> r,
                                         long latency) {
-                    boolean ok = false;
-                    int found = 0;
-                    if (r.isSuccess() && r.data() != null) {
-                        ok = true;
-                        SourceStats st = stats(line.id);
-                        st.lastSuccessAt = System.currentTimeMillis();
-                        st.lastLatencyMs = latency;
-                        synchronized (merged) {
-                            for (Movie m : r.data().movies) {
-                                merged.add(m);
-                            }
-                            found = merged.size();
+                    synchronized (merged) {
+                        if (scope.isCancelled()) return;
+                        if (r.isSuccess() && r.data() != null) {
+                            SourceStats st = stats(line.id);
+                            st.lastSuccessAt = System.currentTimeMillis();
+                            st.lastLatencyMs = latency;
+                            for (Movie movie : r.data().movies) merged.add(movie, line.id.equals(main.id));
+                            anySuccess.set(true);
                         }
+                        final int done = completed.incrementAndGet();
+                        final List<Movie> snapshot = new ArrayList<Movie>(merged.movies);
+                        // Enqueue callbacks in completion order; progress cannot move backwards.
+                        TvBoxApp.get().executors().main(new Runnable() {
+                            public void run() {
+                                if (scope.isCancelled()) return;
+                                listener.onIncremental(snapshot, done, total, snapshot.size());
+                                if (done == total) listener.onFinished(snapshot, anySuccess.get());
+                            }
+                        });
                     }
-                    if (ok) {
-                        anySuccess.set(true);
-                    }
-                    final boolean fok = ok;
-                    final int foundCount = found;
-                    final int done = completed.incrementAndGet();
-                    TvBoxApp.get().executors().main(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (scope.isCancelled()) {
-                                return;
-                            }
-                            if (fok) {
-                                listener.onIncremental(snapshot(merged), done, total, foundCount);
-                            } else {
-                                listener.onIncremental(snapshot(merged), done, total, merged.size());
-                            }
-                            if (done >= total) {
-                                listener.onFinished(snapshot(merged), anySuccess.get());
-                            }
-                        }
-                    });
                 }
             }));
         }
@@ -172,12 +156,6 @@ public class MultiSourceSearch {
                 STATS.put(id, s);
             }
             return s;
-        }
-    }
-
-    private static List<Movie> snapshot(SearchResultMerger.Merged merged) {
-        synchronized (merged) {
-            return new ArrayList<Movie>(merged.movies);
         }
     }
 

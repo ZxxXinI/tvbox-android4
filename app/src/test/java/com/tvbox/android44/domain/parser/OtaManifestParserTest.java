@@ -11,8 +11,10 @@ import org.junit.Test;
 /** OTA 清单解析：BOM / 关键字段缺失报错 / 未知字段忽略。 */
 public class OtaManifestParserTest {
 
+    private static final String HASH = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
     private static final String FULL = "{\"versionCode\":10306,\"versionName\":\"1.3.6\","
-            + "\"apkUrl\":\"https://e.com/TVBox.apk\",\"apkSha256\":\"abc\","
+            + "\"apkUrl\":\"https://e.com/TVBox.apk\",\"apkSha256\":\"" + HASH + "\","
             + "\"apkSize\":12345678,\"force\":false,"
             + "\"changelog\":[\"修复\",\"优化\"],\"unknownField\":123}";
 
@@ -22,7 +24,7 @@ public class OtaManifestParserTest {
         assertEquals(10306, u.versionCode);
         assertEquals("1.3.6", u.versionName);
         assertEquals("https://e.com/TVBox.apk", u.apkUrl);
-        assertEquals("abc", u.apkSha256);
+        assertEquals(HASH, u.apkSha256);
         assertEquals(12345678L, u.apkSize);
         assertTrue(!u.force);
         assertEquals(2, u.changelog.size());
@@ -51,11 +53,28 @@ public class OtaManifestParserTest {
     @Test
     public void optionalFields_defaulted() throws Exception {
         AppUpdate u = OtaManifestParser.parse(
-                "{\"versionCode\":2,\"versionName\":\"1.0\",\"apkUrl\":\"https://e/a.apk\"}");
+                "{\"versionCode\":2,\"versionName\":\"1.0\",\"apkUrl\":\"https://e/a.apk\",\"apkSha256\":\"" + HASH + "\"}");
         assertEquals(0, u.apkSize);
-        assertEquals("", u.apkSha256);
+        assertEquals(HASH, u.apkSha256);
         assertTrue(u.changelog.isEmpty());
         assertTrue(!u.force);
+    }
+
+    @Test
+    public void missingOrMalformedHash_rejected() {
+        assertThrows("apkSha256", FULL.replace(HASH, ""));
+        assertThrows("apkSha256", FULL.replace(HASH, "abc"));
+        assertThrows("apkSha256", FULL.replace(",\"apkSha256\":\"" + HASH + "\"", ""));
+    }
+
+    @Test
+    public void fractionalOrOutOfRangeNumbersAndMalformedForce_rejected() {
+        assertThrows("versionCode", FULL.replace("10306", "1.5"));
+        assertThrows("versionCode", FULL.replace("10306", "0"));
+        assertThrows("versionCode", FULL.replace("10306", "2147483648"));
+        assertThrows("apkSize", FULL.replace(":12345678", ":-1"));
+        assertThrows("apkSize", FULL.replace(":12345678", ":0.5"));
+        assertThrows("force", FULL.replace("false", "\"yes\""));
     }
 
     private static void assertThrows(String expectedMessagePart, String json) {

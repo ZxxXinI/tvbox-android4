@@ -16,13 +16,15 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class AppExecutors {
 
     private final ExecutorService network;
+    private final ExecutorService sourceRequests;
     private final ExecutorService disk;
     private final ScheduledExecutorService scheduler;
     private final Handler main = new Handler(Looper.getMainLooper());
 
     public AppExecutors() {
         network = Executors.newFixedThreadPool(4, namedFactory("tvbox-net"));
-        disk = Executors.newFixedThreadPool(2, namedFactory("tvbox-disk"));
+        sourceRequests = Executors.newFixedThreadPool(3, namedFactory("tvbox-source"));
+        disk = Executors.newSingleThreadExecutor(namedFactory("tvbox-disk"));
         scheduler = Executors.newSingleThreadScheduledExecutor(namedFactory("tvbox-sched"));
     }
 
@@ -33,6 +35,9 @@ public class AppExecutors {
     public ExecutorService disk() {
         return disk;
     }
+
+    /** Child category requests must not wait for their parent in the same pool. */
+    public ExecutorService sourceRequests() { return sourceRequests; }
 
     public ScheduledExecutorService scheduler() {
         return scheduler;
@@ -56,6 +61,7 @@ public class AppExecutors {
 
     public void shutdown() {
         network.shutdownNow();
+        sourceRequests.shutdownNow();
         disk.shutdownNow();
         scheduler.shutdownNow();
     }

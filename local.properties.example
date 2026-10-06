@@ -6,3 +6,7 @@ sdk.dir=/path/to/Android/Sdk
 # TVBOX_STORE_PASSWORD=
 # TVBOX_KEY_ALIAS=
 # TVBOX_KEY_PASSWORD=
+# 可同时通过环境变量注入。正式发布须递增内部版本号，并启用签名强校验。
+TVBOX_VERSION_CODE=2
+TVBOX_VERSION_NAME=0.0.2
+TVBOX_REQUIRE_RELEASE_SIGNING=false

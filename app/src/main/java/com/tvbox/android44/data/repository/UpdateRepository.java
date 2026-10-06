@@ -19,6 +19,9 @@ import com.tvbox.android44.domain.parser.OtaManifestParser;
 import java.io.File;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.FutureTask;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.CancellationException;
 
 /**
  * OTA 更新仓库：清单比较（远端 versionCode > 当前才提示）、
@@ -37,25 +40,36 @@ public class UpdateRepository {
     }
 
     private final ExecutorService executor;
-    private final OtaClient client = new OtaClient();
+    private final OtaClient client;
+    private final String manifestUrl;
     private final Context context;
 
     public UpdateRepository(ExecutorService executor, Context context) {
+        this(executor, context, new OtaClient(), BuildConfig.OTA_MANIFEST_URL);
+    }
+
+    UpdateRepository(ExecutorService executor, Context context, OtaClient client, String manifestUrl) {
         this.executor = executor;
-        this.context = context;
+        this.context = context.getApplicationContext();
+        this.client = client;
+        this.manifestUrl = manifestUrl;
     }
 
     public String manifestUrl() {
-        return BuildConfig.OTA_MANIFEST_URL;
+        return manifestUrl;
     }
 
     public CheckHandle check(final CheckCallback cb) {
         final String url = manifestUrl();
         final CancelScope scope = new CancelScope();
         if (url == null || url.isEmpty()) {
-            deliverCheck(cb, new Result.Failure<AppUpdate>(
-                    ErrorKind.OTHER, "未配置更新清单地址", null));
-            return new CheckHandle(null, null);
+            TvBoxApp.get().executors().main(new Runnable() {
+                public void run() {
+                    if (!scope.isCancelled()) cb.onResult(new Result.Failure<AppUpdate>(
+                            ErrorKind.OTHER, "未配置更新清单地址", null));
+                }
+            });
+            return new CheckHandle(scope, null);
         }
         final FutureTask<Result<AppUpdate>> task =
                 new FutureTask<Result<AppUpdate>>(new java.util.concurrent.Callable<Result<AppUpdate>>() {
@@ -81,92 +95,69 @@ public class UpdateRepository {
                         }
                     }
                 });
-        executor.submit(task);
-        executor.submit(new Runnable() {
-            @Override
-            public void run() {
+        return execute(scope, task, new Completion<AppUpdate>() {
+            public void onResult(Result<AppUpdate> result) { cb.onResult(result); }
+        });
+    }
+
+    /** Only a verified package can become an installable result. */
+    public CheckHandle download(final AppUpdate update, final DownloadCallback cb) {
+        final CancelScope scope = new CancelScope();
+        FutureTask<Result<File>> task = new FutureTask<Result<File>>(new Callable<Result<File>>() {
+            public Result<File> call() {
                 try {
-                    deliverCheck(cb, task.get());
-                } catch (Exception ignored) {
+                    File apk = client.downloadVerified(update, new File(context.getCacheDir(), "ota"),
+                            new OtaClient.DownloadProgress() {
+                                public void onProgress(final long done, final long total) {
+                                    TvBoxApp.get().executors().main(new Runnable() {
+                                        public void run() {
+                                            if (!scope.isCancelled()) cb.onProgress(done, total);
+                                        }
+                                    });
+                                }
+                            }, scope);
+                    return new Result.Success<File>(apk);
+                } catch (Exception e) {
+                    if (scope.isCancelled()) return cancelled();
+                    if (e instanceof OtaClient.VerificationException) {
+                        return new Result.Failure<File>(ErrorKind.PARSE, e.getMessage(), null);
+                    }
+                    ErrorKind kind = ErrorKind.fromException(e);
+                    return new Result.Failure<File>(kind, "下载失败：" + kind.userMessage(), e);
                 }
             }
         });
-        return new CheckHandle(scope, task);
+        return execute(scope, task, new Completion<File>() {
+            public void onResult(Result<File> result) { cb.onDone(result); }
+        });
     }
 
-    /** 下载 + 校验；失败删除临时 APK 并禁止安装。 */
-    public CheckHandle download(final AppUpdate update, final DownloadCallback cb) {
-        final CancelScope scope = new CancelScope();
-        final FutureTask<Result<File>> task =
-                new FutureTask<Result<File>>(new java.util.concurrent.Callable<Result<File>>() {
-                    @Override
-                    public Result<File> call() {
-                        File dir = new File(context.getCacheDir(), "ota");
-                        if (!dir.exists()) {
-                            dir.mkdirs();
-                        }
-                        final File tmp = new File(dir, "update-" + update.versionCode + ".apk.tmp");
-                        try {
-                            String sha = client.downloadApk(update.apkUrl, tmp,
-                                    new OtaClient.DownloadProgress() {
-                                        @Override
-                                        public void onProgress(final long done, final long total) {
-                                            TvBoxApp.get().executors().main(new Runnable() {
-                                                @Override
-                                                public void run() {
-                                                    cb.onProgress(done, total);
-                                                }
-                                            });
-                                        }
-                                    }, scope);
-                            if (scope.isCancelled()) {
-                                tmp.delete();
-                                return cancelled();
-                            }
-                            if (update.apkSize > 0 && tmp.length() != update.apkSize) {
-                                tmp.delete();
-                                return new Result.Failure<File>(ErrorKind.PARSE,
-                                        "安装包大小校验失败，已取消安装", null);
-                            }
-                            if (!update.apkSha256.isEmpty()
-                                    && !sha.equalsIgnoreCase(update.apkSha256)) {
-                                tmp.delete();
-                                return new Result.Failure<File>(ErrorKind.PARSE,
-                                        "SHA-256 校验失败，已取消安装", null);
-                            }
-                            File dest = new File(dir, "update-" + update.versionCode + ".apk");
-                            if (dest.exists()) {
-                                dest.delete();
-                            }
-                            if (!tmp.renameTo(dest)) {
-                                tmp.delete();
-                                return new Result.Failure<File>(ErrorKind.OTHER, "保存安装包失败", null);
-                            }
-                            return new Result.Success<File>(dest);
-                        } catch (Exception e) {
-                            tmp.delete();
-                            if (scope.isCancelled()) {
-                                return cancelled();
-                            }
-                            ErrorKind kind = ErrorKind.fromException(e);
-                            return new Result.Failure<File>(kind, "下载失败：" + kind.userMessage(), e);
-                        }
+    private interface Completion<T> { void onResult(Result<T> result); }
+
+    private <T> CheckHandle execute(final CancelScope scope, final FutureTask<Result<T>> task,
+                                   final Completion<T> completion) {
+        // Run and deliver on the same worker; never occupy another worker waiting on task.get().
+        executor.execute(new Runnable() {
+            public void run() {
+                task.run();
+                if (scope.isCancelled() || task.isCancelled()) return;
+                Result<T> value;
+                try {
+                    value = task.get();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return;
+                } catch (CancellationException e) {
+                    return;
+                } catch (ExecutionException e) {
+                    value = new Result.Failure<T>(ErrorKind.OTHER, "更新操作失败，请重试", e.getCause());
+                }
+                final Result<T> result = value;
+                TvBoxApp.get().executors().main(new Runnable() {
+                    public void run() {
+                        if (!scope.isCancelled()) completion.onResult(result);
                     }
                 });
-        executor.submit(task);
-        executor.submit(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    final Result<File> r = task.get();
-                    TvBoxApp.get().executors().main(new Runnable() {
-                        @Override
-                        public void run() {
-                            cb.onDone(r);
-                        }
-                    });
-                } catch (Exception ignored) {
-                }
             }
         });
         return new CheckHandle(scope, task);
@@ -203,15 +194,6 @@ public class UpdateRepository {
     @SuppressWarnings("unchecked")
     private static <T> Result<T> cancelled() {
         return (Result<T>) Result.Cancelled.INSTANCE;
-    }
-
-    private static void deliverCheck(final CheckCallback cb, final Result<AppUpdate> r) {
-        TvBoxApp.get().executors().main(new Runnable() {
-            @Override
-            public void run() {
-                cb.onResult(r);
-            }
-        });
     }
 
     public static final class CheckHandle {

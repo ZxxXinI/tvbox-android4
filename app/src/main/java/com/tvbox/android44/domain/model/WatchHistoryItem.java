@@ -1,7 +1,8 @@
 package com.tvbox.android44.domain.model;
 
 /** 观看历史条目（apiLineId + movieId 唯一）。 */
-public class WatchHistoryItem {
+public class WatchHistoryItem implements java.io.Serializable {
+    private static final long serialVersionUID = 1L;
     public String movieId;
     public String apiLineId;
     public String apiLineName;
@@ -22,6 +23,15 @@ public class WatchHistoryItem {
     public WatchHistoryItem() {
     }
 
+    public WatchHistoryItem(WatchHistoryItem other) {
+        movieId = other.movieId; apiLineId = other.apiLineId; apiLineName = other.apiLineName;
+        movieName = other.movieName; posterUrl = other.posterUrl; typeName = other.typeName;
+        remarks = other.remarks; lineIndex = other.lineIndex; lineId = other.lineId;
+        lineName = other.lineName; episodeIndex = other.episodeIndex;
+        episodeTitle = other.episodeTitle; episodeUrl = other.episodeUrl;
+        position = other.position; duration = other.duration; updatedAt = other.updatedAt;
+    }
+
     public String key() {
         return apiLineId + "|" + movieId;
     }
@@ -32,6 +42,6 @@ public class WatchHistoryItem {
             return 0;
         }
         long p = Math.min(position, duration);
-        return (int) (p * 100 / duration);
+        return (int) ((double) p * 100.0 / duration);
     }
 }

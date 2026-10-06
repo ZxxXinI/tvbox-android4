@@ -6,10 +6,12 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.tvbox.android44.R;
 import com.tvbox.android44.common.FocusScaler;
+import com.tvbox.android44.common.PageFocusState;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -38,21 +40,41 @@ public class ChipAdapter extends RecyclerView.Adapter<ChipAdapter.Holder> {
 
     public ChipAdapter(OnChipClick click) {
         this.click = click;
+        setHasStableIds(true);
+        setStateRestorationPolicy(StateRestorationPolicy.PREVENT_WHEN_EMPTY);
     }
 
     public void setChips(List<Chip> list) {
-        chips.clear();
+        final List<Chip> old = new ArrayList<Chip>(chips);
+        final List<Chip> next = new ArrayList<Chip>();
         if (list != null) {
-            chips.addAll(list);
+            for (Chip chip : list) next.add(new Chip(chip.id, chip.label, chip.selected));
         }
-        notifyDataSetChanged();
+        DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+            @Override public int getOldListSize() { return old.size(); }
+            @Override public int getNewListSize() { return next.size(); }
+            @Override public boolean areItemsTheSame(int before, int after) {
+                return old.get(before).id.equals(next.get(after).id);
+            }
+            @Override public boolean areContentsTheSame(int before, int after) {
+                Chip a = old.get(before), b = next.get(after);
+                return a.label.equals(b.label) && a.selected == b.selected;
+            }
+        });
+        chips.clear();
+        chips.addAll(next);
+        diff.dispatchUpdatesTo(this);
     }
 
     public void setSelected(String id) {
-        for (Chip c : chips) {
-            c.selected = c.id.equals(id);
+        for (int i = 0; i < chips.size(); i++) {
+            Chip chip = chips.get(i);
+            boolean selected = chip.id.equals(id);
+            if (chip.selected != selected) {
+                chip.selected = selected;
+                notifyItemChanged(i);
+            }
         }
-        notifyDataSetChanged();
     }
 
     public int indexOf(String id) {
@@ -86,7 +108,8 @@ public class ChipAdapter extends RecyclerView.Adapter<ChipAdapter.Holder> {
             @Override
             public void onClick(View v) {
                 if (click != null) {
-                    click.onChipClick(c, chips.indexOf(c));
+                    int current = holder.getBindingAdapterPosition();
+                    if (current != RecyclerView.NO_POSITION) click.onChipClick(chips.get(current), current);
                 }
             }
         });
@@ -95,6 +118,10 @@ public class ChipAdapter extends RecyclerView.Adapter<ChipAdapter.Holder> {
     @Override
     public int getItemCount() {
         return chips.size();
+    }
+
+    @Override public long getItemId(int position) {
+        return PageFocusState.stableId(chips.get(position).id);
     }
 
     static final class Holder extends RecyclerView.ViewHolder {

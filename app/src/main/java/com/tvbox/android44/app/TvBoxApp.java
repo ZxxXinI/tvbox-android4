@@ -20,6 +20,7 @@ import com.tvbox.android44.data.repository.MultiSourceSearch;
 import com.tvbox.android44.data.repository.PlatformLiveRepository;
 import com.tvbox.android44.data.repository.RecommendRepository;
 import com.tvbox.android44.data.repository.UpdateRepository;
+import com.tvbox.android44.domain.update.StartupUpdatePolicy;
 
 import android.os.StrictMode;
 
@@ -43,6 +44,7 @@ public class TvBoxApp extends Application {
     private PlatformLiveRepository platformLive;
     private RecommendRepository recommend;
     private UpdateRepository updates;
+    private final StartupUpdatePolicy startupUpdates = new StartupUpdatePolicy();
 
     @Override
     protected void attachBaseContext(android.content.Context base) {
@@ -69,8 +71,13 @@ public class TvBoxApp extends Application {
         HttpClients.init(executors);
 
         history = new HistoryStore(this);
-        health = new HealthStore(this);
-        movies = new MovieRepository(executors.network());
+        executors.disk().execute(new Runnable() {
+            public void run() { history.load(); }
+        });
+        health = new HealthStore(this, executors.disk(), new java.util.concurrent.Executor() {
+            @Override public void execute(Runnable command) { executors.main(command); }
+        });
+        movies = new MovieRepository(executors.network(), executors.sourceRequests());
         search = new MultiSourceSearch(executors.network(), movies, settings);
         supplement = new DetailSupplement(executors.network(), movies, settings);
         douban = new DoubanRepository(executors.network(), this);
@@ -131,6 +138,8 @@ public class TvBoxApp extends Application {
     public UpdateRepository updates() {
         return updates;
     }
+
+    public StartupUpdatePolicy startupUpdates() { return startupUpdates; }
 
     @Override
     public void onTrimMemory(int level) {

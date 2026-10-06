@@ -85,6 +85,7 @@ public final class AppConstants {
     /** 配置会话 token 有效期（毫秒）。 */
     public static final long CONFIG_TOKEN_TTL_MS = 5 * 60 * 1000L;
     public static final int CONFIG_MAX_TOKEN_FAILURES = 5;
+    public static final int CONFIG_MAX_REQUEST_BYTES = 16 * 1024;
 
     // ===== OTA =====
     public static final String APK_MIME = "application/vnd.android-package-archive";

@@ -9,6 +9,17 @@ import org.junit.Test;
 
 /** 多来源增量合并：主来源优先、稳定顺序、增量追加、元数据补齐。 */
 public class SearchResultMergerTest {
+    @Test
+    public void lateMainSourceReplacesCardWithoutChangingOrder() {
+        SearchResultMerger.Merged merged = SearchResultMerger.newMerger();
+        merged.add(movie("other", "otherSource", "影片", "2025"));
+        merged.add(movie("second", "otherSource", "其他影片", "2025"));
+        merged.add(movie("main", "mainSource", "影片", "2025"), true);
+        assertEquals("main", merged.movies.get(0).id);
+        assertEquals("second", merged.movies.get(1).id);
+        assertTrue(merged.movies.get(0).availableSourceIds.contains("otherSource"));
+        assertTrue(merged.movies.get(0).availableSourceIds.contains("mainSource"));
+    }
 
     private static Movie movie(String id, String sourceId, String name, String year) {
         Movie m = new Movie(id, sourceId, "源" + sourceId, name);

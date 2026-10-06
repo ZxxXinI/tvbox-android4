@@ -31,11 +31,16 @@ public class RecommendRepository {
 
     private final ExecutorService executor;
     private final SettingsRepository settings;
-    private final AiClient client = new AiClient();
+    private final AiClient client;
 
     public RecommendRepository(ExecutorService executor, SettingsRepository settings) {
+        this(executor, settings, new AiClient());
+    }
+
+    RecommendRepository(ExecutorService executor, SettingsRepository settings, AiClient client) {
         this.executor = executor;
         this.settings = settings;
+        this.client = client;
     }
 
     public Handle ask(final String userQuery, final Callback cb) {
@@ -44,9 +49,9 @@ public class RecommendRepository {
         final String key = settings.aiApiKey();
         final CancelScope scope = new CancelScope();
         if (provider == null || key.isEmpty() || model.isEmpty()) {
-            deliver(cb, new Result.Failure<List<AiRecommendItem>>(
+            deliver(scope, cb, new Result.Failure<List<AiRecommendItem>>(
                     ErrorKind.PERMISSION, "请先在设置中配置 AI 提供方、模型和 API Key", null));
-            return new Handle(null, null);
+            return new Handle(scope, null);
         }
         final FutureTask<Result<List<AiRecommendItem>>> task =
                 new FutureTask<Result<List<AiRecommendItem>>>(
@@ -79,23 +84,28 @@ public class RecommendRepository {
                                     if (scope.isCancelled()) {
                                         return cancelled();
                                     }
-                                    ErrorKind kind = ErrorKind.fromException(e);
+                                    ErrorKind kind = e instanceof AiClient.ResponseException
+                                            ? ((AiClient.ResponseException) e).kind : ErrorKind.fromException(e);
                                     return new Result.Failure<List<AiRecommendItem>>(
-                                            kind, kind.userMessage(), e);
+                                            kind, kind == ErrorKind.PARSE ? "AI 返回格式无法识别，请重试"
+                                            : kind == ErrorKind.EMPTY_BODY ? "AI 未返回内容，请重试" : kind.userMessage(), e);
                                 }
                             }
-                        });
-        executor.submit(task);
-        executor.submit(new Runnable() {
-            @Override
-            public void run() {
+                        }) {
+            @Override protected void done() {
+                if (scope.isCancelled() || isCancelled()) return;
                 try {
-                    final Result<List<AiRecommendItem>> r = task.get();
-                    deliver(cb, r);
-                } catch (Exception ignored) {
+                    deliver(scope, cb, get());
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                } catch (java.util.concurrent.CancellationException ignored) {
+                } catch (java.util.concurrent.ExecutionException e) {
+                    deliver(scope, cb, new Result.Failure<List<AiRecommendItem>>(
+                            ErrorKind.OTHER, "推荐请求失败，请重试", e.getCause()));
                 }
             }
-        });
+        };
+        executor.execute(task);
         return new Handle(scope, task);
     }
 
@@ -104,11 +114,11 @@ public class RecommendRepository {
         return (Result<T>) Result.Cancelled.INSTANCE;
     }
 
-    private static void deliver(final Callback cb, final Result<List<AiRecommendItem>> r) {
+    private static void deliver(final CancelScope scope, final Callback cb, final Result<List<AiRecommendItem>> r) {
         TvBoxApp.get().executors().main(new Runnable() {
             @Override
             public void run() {
-                cb.onResult(r);
+                if (!scope.isCancelled()) cb.onResult(r);
             }
         });
     }

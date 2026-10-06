@@ -13,7 +13,7 @@
         android:layout_height="wrap_content"
         android:scaleType="centerCrop"
         android:src="@drawable/poster_placeholder"
-        android:contentDescription="房间封面" />
+        android:contentDescription="@string/room_cover_desc" />
 
     <TextView
         android:id="@+id/room_title"

@@ -25,13 +25,13 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginRight="16dp"
-            android:text="取消" />
+            android:text="@string/cancel" />
 
         <TextView
             android:id="@+id/dialog_ok"
             style="@style/Widget.Tv.NavButton"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="确定" />
+            android:text="@string/confirm" />
     </LinearLayout>
 </LinearLayout>

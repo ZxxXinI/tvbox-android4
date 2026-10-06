@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <com.tvbox.android44.common.StateLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/home_state"
     android:layout_width="match_parent"
@@ -23,7 +23,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginBottom="8dp"
-                android:text="影院"
+                android:text="@string/theme_cinema"
                 android:textColor="@color/accent"
                 android:textSize="13sp"
                 android:textStyle="bold" />
@@ -31,34 +31,34 @@
             <TextView
                 android:id="@+id/cinema_nav_history"
                 style="@style/Widget.Tv.CinemaRailItem"
-                android:text="历\n史" />
+                android:text="@string/nav_history_vertical" />
 
             <TextView
                 android:id="@+id/cinema_nav_search"
                 style="@style/Widget.Tv.CinemaRailItem"
-                android:text="搜\n索" />
+                android:text="@string/nav_search_vertical" />
 
             <TextView
                 android:id="@+id/cinema_nav_recommend"
                 style="@style/Widget.Tv.CinemaRailItem"
-                android:text="推\n荐" />
+                android:text="@string/nav_recommend_vertical" />
 
             <TextView
                 android:id="@+id/cinema_nav_live_tv"
                 style="@style/Widget.Tv.CinemaRailItem"
                 android:visibility="gone"
-                android:text="电\n视" />
+                android:text="@string/nav_live_tv_vertical" />
 
             <TextView
                 android:id="@+id/cinema_nav_platform_live"
                 style="@style/Widget.Tv.CinemaRailItem"
                 android:visibility="gone"
-                android:text="直\n播" />
+                android:text="@string/nav_platform_live_vertical" />
 
             <TextView
                 android:id="@+id/cinema_nav_settings"
                 style="@style/Widget.Tv.CinemaRailItem"
-                android:text="设\n置" />
+                android:text="@string/nav_settings_vertical" />
         </LinearLayout>
 
         <!-- 右侧：Hero + 分类行 + 海报网格 -->
@@ -130,7 +130,7 @@
                             style="@style/Widget.Tv.NavButton"
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
-                            android:text="播放" />
+                            android:text="@string/play" />
 
                         <TextView
                             android:id="@+id/home_hero_detail"
@@ -138,7 +138,7 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:layout_marginLeft="14dp"
-                            android:text="详情" />
+                            android:text="@string/detail" />
                     </LinearLayout>
                 </LinearLayout>
             </FrameLayout>

@@ -74,7 +74,7 @@ public class StateLayout extends FrameLayout {
         setState(false, true, true);
         message.setText(text);
         this.retryListener = listener;
-        retry.requestFocus();
+        if (isShown()) retry.requestFocus();
     }
 
     public void showContent() {

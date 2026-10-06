@@ -88,7 +88,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="14dp"
-                android:text="上一集" />
+                android:text="@string/previous_episode" />
 
             <TextView
                 android:id="@+id/player_toggle"
@@ -96,7 +96,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="14dp"
-                android:text="暂停" />
+                android:text="@string/pause" />
 
             <TextView
                 android:id="@+id/player_next"
@@ -104,7 +104,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="14dp"
-                android:text="下一集" />
+                android:text="@string/next_episode" />
 
             <TextView
                 android:id="@+id/player_speed"
@@ -112,7 +112,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="14dp"
-                android:text="倍速 1.0x" />
+                android:text="@string/speed_default" />
 
             <TextView
                 android:id="@+id/player_change_line"
@@ -120,14 +120,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="14dp"
-                android:text="换线" />
+                android:text="@string/switch_line" />
 
             <TextView
                 android:id="@+id/player_exit"
                 style="@style/Widget.Tv.NavButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="退出" />
+                android:text="@string/exit" />
         </LinearLayout>
     </LinearLayout>
 
@@ -185,14 +185,14 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginRight="14dp"
-                android:text="重试当前" />
+                android:text="@string/retry_current" />
 
             <TextView
                 android:id="@+id/player_error_back"
                 style="@style/Widget.Tv.NavButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="返回详情" />
+                android:text="@string/back_detail" />
         </LinearLayout>
     </LinearLayout>
 </FrameLayout>

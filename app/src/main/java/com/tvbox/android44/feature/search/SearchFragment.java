@@ -19,6 +19,8 @@ import com.tvbox.android44.R;
 import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.common.StateLayout;
+import com.tvbox.android44.common.PageFocusState;
+import com.tvbox.android44.domain.parser.NameNormalizer;
 import com.tvbox.android44.common.ui.GridSpacingDecoration;
 import com.tvbox.android44.common.ui.PosterEntry;
 import com.tvbox.android44.common.ui.PosterGridAdapter;
@@ -34,7 +36,7 @@ import java.util.List;
  * 搜索页：多来源增量结果（主来源优先、并发≤3、单源 3s 超时）。
  * 任一来源返回立即展示；单源失败只计完成数；全部完成且为空才空态。
  */
-public class SearchFragment extends Fragment {
+public class SearchFragment extends Fragment implements PageFocusState.Owner {
 
     private EditText input;
     private TextView status;
@@ -44,6 +46,8 @@ public class SearchFragment extends Fragment {
     private MultiSourceSearch.Handle searchHandle;
     private int requestId;
     private String lastQuery;
+    private String pendingQuery;
+    private Bundle pendingFocus;
 
     @Nullable
     @Override
@@ -69,6 +73,10 @@ public class SearchFragment extends Fragment {
             }
         });
         grid.setAdapter(adapter);
+        if (savedInstanceState != null) {
+            lastQuery = savedInstanceState.getString("query");
+            pendingFocus = savedInstanceState.getBundle("focus");
+        }
 
         root.findViewById(R.id.search_button).setOnClickListener(new View.OnClickListener() {
             @Override
@@ -89,6 +97,30 @@ public class SearchFragment extends Fragment {
         return root;
     }
 
+    @Override public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        String query = pendingQuery != null ? pendingQuery : lastQuery;
+        pendingQuery = null;
+        if (query != null && !query.isEmpty()) { input.setText(query); startSearch(query); }
+    }
+
+    @Override public void onSaveInstanceState(@NonNull Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString("query", lastQuery);
+        Bundle focused = PageFocusState.capture(getView());
+        out.putBundle("focus", focused.isEmpty() ? pendingFocus : focused);
+    }
+
+    @Override public void restorePageFocus(Bundle focused) {
+        pendingFocus = focused;
+        if (!isHidden() && PageFocusState.restore(getView(), pendingFocus)) pendingFocus = null;
+    }
+
+    @Override public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden) restorePageFocus(pendingFocus);
+    }
+
     private int columnsForScale() {
         String f = TvBoxApp.get().settings().fontScale();
         if (SettingsRepository.FONT_XLARGE.equals(f)) {
@@ -105,6 +137,7 @@ public class SearchFragment extends Fragment {
         if (query == null || query.trim().isEmpty()) {
             return;
         }
+        if (input == null || getView() == null) { pendingQuery = query.trim(); return; }
         input.setText(query.trim());
         startSearch(query.trim());
     }
@@ -138,7 +171,7 @@ public class SearchFragment extends Fragment {
             @Override
             public void onIncremental(List<Movie> merged, int completed, int totalSources,
                                       int foundCount) {
-                if (rid != requestId || !isAdded()) {
+                if (rid != requestId || !isAdded() || getView() == null) {
                     return;
                 }
                 renderResults(merged, false);
@@ -147,15 +180,13 @@ public class SearchFragment extends Fragment {
                 status.setVisibility(View.VISIBLE);
                 if (!merged.isEmpty()) {
                     state.showContent();
-                    if (grid.findFocus() == null && grid.getChildCount() > 0) {
-                        grid.getChildAt(0).requestFocus();
-                    }
+                    if (!isHidden() && PageFocusState.restore(getView(), pendingFocus)) pendingFocus = null;
                 }
             }
 
             @Override
             public void onFinished(List<Movie> merged, boolean anySuccess) {
-                if (rid != requestId || !isAdded()) {
+                if (rid != requestId || !isAdded() || getView() == null) {
                     return;
                 }
                 if (merged.isEmpty()) {
@@ -176,18 +207,11 @@ public class SearchFragment extends Fragment {
     private void renderResults(List<Movie> merged, boolean appendOnly) {
         List<PosterEntry> entries = new ArrayList<PosterEntry>();
         for (Movie m : merged) {
-            entries.add(new PosterEntry(m.apiLineId + "-" + m.id, m.name,
+            entries.add(new PosterEntry(NameNormalizer.dedupeKey(m.name, m.year), m.name,
                     m.remarks + (m.apiLineName.isEmpty() ? "" : " · " + m.apiLineName),
                     m.posterUrl, m));
         }
-        if (adapter.entries().isEmpty()) {
-            adapter.setEntries(entries);
-        } else {
-            int existing = adapter.entries().size();
-            if (entries.size() > existing) {
-                adapter.appendEntries(entries.subList(existing, entries.size()));
-            }
-        }
+        adapter.updateEntries(entries);
     }
 
     private void hideKeyboard() {
@@ -203,10 +227,13 @@ public class SearchFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        ++requestId;
         // 离开页面取消搜索；取消不计失败、不显示错误
         if (searchHandle != null) {
             searchHandle.cancel();
         }
         super.onDestroyView();
+        input = null;
+        grid = null;
     }
 }

@@ -5,6 +5,8 @@ import androidx.annotation.Nullable;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonElement;
+import com.tvbox.android44.common.ErrorKind;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -23,23 +25,32 @@ public class AiClient {
 
     private static final Gson GSON = new Gson();
     private static final MediaType JSON = MediaType.parse("application/json; charset=utf-8");
+    private final OkHttpClient http;
+
+    public AiClient() {
+        this(HttpClients.client().newBuilder().connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(45, TimeUnit.SECONDS).writeTimeout(20, TimeUnit.SECONDS)
+                .callTimeout(60, TimeUnit.SECONDS).build());
+    }
+
+    public AiClient(OkHttpClient http) { this.http = http; }
+
+    public static final class ResponseException extends IOException {
+        public final ErrorKind kind;
+        ResponseException(ErrorKind kind) { super(kind.name()); this.kind = kind; }
+    }
 
     /** Base URL 已以 /chat/completions 结尾直接使用，否则追加该路径。 */
     public static String normalizeApiBase(String raw) {
         if (raw == null) {
             return "";
         }
-        String s = raw.trim();
-        while (s.endsWith("/")) {
-            s = s.substring(0, s.length() - 1);
-        }
-        if (!s.startsWith("http://") && !s.startsWith("https://")) {
-            return "";
-        }
-        if (s.endsWith("/chat/completions")) {
-            return s;
-        }
-        return s + "/chat/completions";
+        okhttp3.HttpUrl url = okhttp3.HttpUrl.parse(raw.trim());
+        if (url == null) return "";
+        String path = url.encodedPath();
+        while (path.endsWith("/")) path = path.substring(0, path.length() - 1);
+        if (!path.endsWith("/chat/completions")) path += "/chat/completions";
+        return url.newBuilder().encodedPath(path).fragment(null).build().toString();
     }
 
     public static final class ChatResult {
@@ -81,12 +92,7 @@ public class AiClient {
                 .post(RequestBody.create(JSON, GSON.toJson(body)))
                 .build();
 
-        OkHttpClient client = HttpClients.client().newBuilder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(45, TimeUnit.SECONDS)
-                .writeTimeout(20, TimeUnit.SECONDS)
-                .build();
-        okhttp3.Call call = client.newCall(request);
+        okhttp3.Call call = http.newCall(request);
         if (scope != null) {
             scope.register(call);
         }
@@ -94,7 +100,6 @@ public class AiClient {
             Response response = call.execute();
             try {
                 int code = response.code();
-                String text = response.body() == null ? "" : response.body().string();
                 if (code == 401 || code == 403) {
                     return new ChatResult(null, code);
                 }
@@ -104,6 +109,7 @@ public class AiClient {
                 if (code != 200) {
                     throw new IOException("HTTP " + code);
                 }
+                String text = response.body() == null ? "" : response.body().string();
                 return new ChatResult(parseContent(text), code);
             } finally {
                 response.close();
@@ -116,26 +122,35 @@ public class AiClient {
     }
 
     static String parseContent(String body) throws IOException {
+        if (body == null || body.trim().isEmpty()) throw new ResponseException(ErrorKind.EMPTY_BODY);
         try {
-            JsonObject root = com.google.gson.JsonParser.parseString(body).getAsJsonObject();
+            JsonElement parsed = com.google.gson.JsonParser.parseString(body);
+            if (!parsed.isJsonObject()) throw new ResponseException(ErrorKind.PARSE);
+            JsonObject root = parsed.getAsJsonObject();
             if (!root.has("choices") || !root.get("choices").isJsonArray()) {
-                throw new IOException("PARSE");
+                throw new ResponseException(ErrorKind.PARSE);
             }
             JsonArray choices = root.getAsJsonArray("choices");
             if (choices.size() == 0) {
-                throw new IOException("EMPTY_BODY");
+                throw new ResponseException(ErrorKind.EMPTY_BODY);
             }
+            if (!choices.get(0).isJsonObject()) throw new ResponseException(ErrorKind.PARSE);
             JsonObject first = choices.get(0).getAsJsonObject();
-            if (first.has("message") && first.getAsJsonObject("message").has("content")) {
-                String content = first.getAsJsonObject("message").get("content").getAsString();
+            if (first.has("message") && first.get("message").isJsonObject()
+                    && first.getAsJsonObject("message").has("content")) {
+                JsonElement value = first.getAsJsonObject("message").get("content");
+                if (value.isJsonNull()) throw new ResponseException(ErrorKind.EMPTY_BODY);
+                if (!value.isJsonPrimitive() || !value.getAsJsonPrimitive().isString()) throw new ResponseException(ErrorKind.PARSE);
+                String content = value.getAsString();
                 if (content == null || content.trim().isEmpty()) {
-                    throw new IOException("EMPTY_BODY");
+                    throw new ResponseException(ErrorKind.EMPTY_BODY);
                 }
                 return content;
             }
-            throw new IOException("PARSE");
-        } catch (com.google.gson.JsonSyntaxException e) {
-            throw new IOException("PARSE");
+            throw new ResponseException(ErrorKind.PARSE);
+        } catch (RuntimeException e) {
+            // Do not retain raw server content in messages or exception causes.
+            throw new ResponseException(ErrorKind.PARSE);
         }
     }
 }

@@ -36,6 +36,8 @@ public class PosterGridAdapter extends RecyclerView.Adapter<PosterGridAdapter.Ho
     public PosterGridAdapter(OnPosterClick click, float posterRatio) {
         this.click = click;
         this.posterRatio = posterRatio;
+        setHasStableIds(true);
+        setStateRestorationPolicy(StateRestorationPolicy.PREVENT_WHEN_EMPTY);
     }
 
     public void setEntries(List<PosterEntry> list) {
@@ -51,8 +53,29 @@ public class PosterGridAdapter extends RecyclerView.Adapter<PosterGridAdapter.Ho
             return;
         }
         int start = entries.size();
-        entries.addAll(list);
-        notifyItemRangeInserted(start, list.size());
+        for (PosterEntry entry : list) {
+            if (indexOfKey(entry.key) < 0) entries.add(entry);
+        }
+        notifyItemRangeInserted(start, entries.size() - start);
+    }
+
+    /** Stable positions allow a late preferred source to update a card without replacing focus. */
+    public void updateEntries(List<PosterEntry> list) {
+        int existing = entries.size();
+        int shared = Math.min(existing, list.size());
+        for (int i = 0; i < shared; i++) {
+            entries.set(i, list.get(i));
+            notifyItemChanged(i, "metadata");
+        }
+        if (list.size() > existing) appendEntries(list.subList(existing, list.size()));
+        else if (existing > list.size()) {
+            entries.subList(list.size(), existing).clear();
+            notifyItemRangeRemoved(list.size(), existing - list.size());
+        }
+    }
+
+    @Override public long getItemId(int position) {
+        return com.tvbox.android44.common.PageFocusState.stableId(entries.get(position).key);
     }
 
     public void clear() {

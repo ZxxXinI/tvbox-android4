@@ -92,7 +92,7 @@
             android:layout_gravity="top|left"
             android:layout_marginLeft="32dp"
             android:layout_marginTop="20dp"
-            android:text="返回房间" />
+            android:text="@string/back_room" />
 
         <TextView
             android:id="@+id/platform_player_error"

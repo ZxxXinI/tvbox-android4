@@ -1,5 +1,7 @@
 ﻿# AI 开发日志（Android 4.4 独立工程）
 
+> 当前基线与本轮结果以 docs/13 和 VERIFICATION_REPORT.md 为准。以下历史记录中的豆瓣首页、六入口及设备结论只对应当时版本。
+
 ## 2026-08-29 Gate 0~6 部分：工程骨架 + 数据层 + 首页/详情/播放器主链路
 
 ### 本轮目标
@@ -317,3 +319,79 @@
 - 目标仓库：`https://github.com/ZxxXinI/tvbox-android4`
 - 发布标签：`v0.0.1`
 - 项目关系：本仓库为 `ZxxXinI/tvbox` 的 Android 4.4+ 独立兼容版。
+
+
+## 2026-10-05 当前视频源首页基线与业务补全
+
+### 范围与决定
+
+用户确认不要求豆瓣首页，采用当前视频源内容，并授权补全代码与文档。保留独立包名、minSdk 19、Java/XML、ExoPlayer 2/OkHttp 3.12；直播入口保持隐藏。本轮未提交、推送或发布线上清单。
+
+### 分阶段修改
+
+1. OTA：增加 REQUEST_INSTALL_PACKAGES；强制 64 位 SHA-256；严格版本/大小/force 解析；唯一临时文件、成功后改名、失败与取消清理；流关闭后取消句柄注销；取消阻止已排队进度/完成回调；API 19/28 真实 HTTP 与安装 Intent 回归。
+2. 请求与业务：分类父/子线程池分离；共享在途任务改为独立订阅取消；MacCMS 请求全局上限 3 且排队计入超时；主来源晚到替换同位置卡片；进度按完成顺序通知；补线在主线程追加并尊重取消、稳定线路去重和精确年份匹配。
+3. 历史：快照复制、坏条目过滤、排序去重、100 条上限；JsonIo 同步临时文件后原子替换，失败保留原文件；写成功才替换缓存/通知；磁盘队列顺序执行播放器保存，历史 UI 异步读取和清空。
+4. 页面：PageFocusState 记录稳定列表卡片与位置；海报/历史稳定 ID；恢复分类、搜索词、已加载页数、详情线路/选集与焦点；生命周期晚到保护、隐藏页面不抢焦点；分页成功后才递增、失败重试、追加去重。测试带出 API 19 卡片未显式可聚焦，修复 FocusScaler；主导航接入 BaseActivity 字体缩放，重建回归验证生效。
+5. 工程与文档：官方 Gradle/Google/MavenCentral/PluginPortal，Gradle ZIP 校验和；Robolectric 测试依赖保留 API 19 支持，测试缓存放在 app/build/test-home；CI 构建/测试/Lint/产物；版本、签名支持环境注入与正式签名强检查；prepare_release.py 验证 APK 生成清单且默认拒绝调试证书；设备 smoke 脚本及验收矩阵；统一 docs/00~12、根 README/HANDOFF，新增 docs/13 与 CHANGELOG，保留原始上传 zip 归档。
+
+### 实际验证
+
+- 最终命令：bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease --no-daemon --max-workers=4 --console=plain。
+- BUILD SUCCESSFUL in 2m 1s；98 actionable tasks: 30 executed, 68 up-to-date。
+- Debug/Release 各 21 类、116 项，失败/错误/跳过均 0；基线 81 项，新增 35 项。
+- Lint 两种类型均 0 Error、0 Fatal、126 Warning。警告类别与后续项见 VERIFICATION_REPORT.md。
+- APK 包名 com.tvbox.android44、minSdk 19、targetSdk 28、v0.0.1/code1；v1/v2 签名验证通过，均为调试证书验证包；字节数和实际 SHA-256 已写入报告。
+- 发布生成器验证两个真实 APK，清单与副本哈希一致；默认拒绝调试签名；TVBOX_REQUIRE_RELEASE_SIGNING=true 无密钥时拒绝配置。设备脚本 bash -n、Python 编译、CI YAML 解析、文档路径/U+FFFD 与 git diff --check 通过。
+- 回归发现并修正 OkHttp 整体 deadline 的 InterruptedIOException(timeout) 分类；HTTP 状态错误映射为 HTTP。测试 HTTP 夹具使用合法数值影片 ID/type_id，没有放宽业务解析器来通过测试。
+
+### 尚未验证
+
+本轮 adb devices 为空、无 /dev/kvm。Robolectric API 19/28 不替代设备证据；真实 API 19/26+ 安装器、媒体解码、遥控器、同证书升级、真实 AI/手机扫码仍待填写 docs/13。没有正式发布密钥，没有创建 GitHub Release，也没有 GitHub Actions 在线运行结果。
+
+## 2026-10-05 文档规划复查
+
+按用户要求对照模块规则、源码及测试目录复查规划。新增 `docs/14-文档规划复查与待补任务.md`，将实现状态、自动化证据与设备验收分开记录；按优先级列出播放器返回请求编号不一致、缓冲判定事件接入不足、线路健康主线程 I/O、历史恢复分支、媒体类型回退、启动更新开关未接入、扫码超时/旧会话回调以及 AI 取消保护与请求测试缺口。
+
+更新文档入口、当前基线、Gate 任务、接手说明和验证报告链接；统一 OTA 强制哈希、JSON 存储位置及暂缓直播验收的表述。这些源码缺口尚未修复；本轮交付为静态复查及规划更新，未重新构建 APK、运行 Gradle 测试或执行设备验收。`git diff --check` 通过；21 个 Markdown 的 UTF-8/BOM、替换字符、行末空白及 54 个本地链接检查通过。
+
+## 2026-10-06 按规划补齐 P1/P2 与相关 UI 整理
+
+### 范围与实现
+
+用户授权开始完善 `docs/14` 的待补任务。保持当前 MacCMS 视频源首页、四入口、minSdk 19、Java/XML、ExoPlayer 2/OkHttp 3.12，直播 Gate 7/8 暂缓。本轮没有提交、推送、线上发布或真实设备结果。
+
+1. 播放返回：统一 REQUEST_PLAYBACK，退出直接回传历史快照；详情更新线路/集/进度和继续播放，布局后恢复当前集焦点。磁盘队列阻塞时仍正确返回。
+2. 缓冲与媒体：BUFFERING + 500ms 轮询，READY 结束窗口；暂停依据 playWhenReady，seek/开关/用尽线路保护；IDLE/ENDED 清理，停止释放；URL path、实际 MIME 与一次受控类型回退，无额外探测。
+3. 历史与健康：共享 PlaybackSelection 匹配线路 ID/名称与集标题，近片尾下一集清零，首次详情失败确认旧 URL；自然末集、暂停保存和重建修正。HealthStore 顺序队列初始化/写入/清空，成功才发布快照，30 天/300 条、坏数据、写失败和计数溢出保护。
+4. 更新/扫码/AI：启动开关与清单接入，15 分钟节流、同版本提示去重、错误静默、仅引导设置；扫码固定模式/单局域网地址、主动 5 分钟到期、5 次失败、一次成功、旧回调丢弃，回复手机后关闭，断连也释放；AI 请求规范化/错误分类/60 秒整体上限、取消队列保护、View 代次/重建、语音权限与错误 Key 保留上一批。
+5. UI 与文档：13 个布局文案和相关动态文案资源化，Chip/Episode/Recommend 稳定 ID 与 DiffUtil，重复推荐去重、重排保留焦点；更新 docs/06/07/09/10/13/14、入口、HANDOFF、CHANGELOG 与本报告，保持实现/自动化/设备三维状态。
+
+主要源码与 10 个新增测试类见 VERIFICATION_REPORT.md 的入口表及回归表；先前 10 月 5 日记录保留为历史。
+
+### 实际验证
+
+- 最终命令：bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease --no-daemon --max-workers=4 --console=plain。
+- BUILD SUCCESSFUL in 2m 14s；98 actionable tasks: 30 executed, 68 up-to-date。最终日志 planning-verified-final.log。
+- Debug/Release 各 31 类、181 项，失败/错误/跳过均 0；相对上轮 116 项新增 65 项/10 类；包含 Robolectric API 19/23/28、真实本地 HTTP/Socket、受控 ExoPlayer 与假时钟。
+- Lint 两类型均 0 Error、0 Fatal、44 Warning，126 → 44；HardcodedText 为 0，剩余类别见当前报告。
+- 两个 APK 包名/版本/minSdk19/targetSdk28 与 v1/v2 签名验证通过，均为同一调试证书；Debug 3 DEX、Release 1 DEX，主 DEX 启动类存在，Multidex 在 attachBaseContext 安装。R8 保留 HealthMap 与 WatchHistoryItem 字段。
+- Debug 12013822 字节，SHA-256 f23271d2ea7dbec1d6d29bb9259d08a1b08b6bf91f629229446f1117f38cc8d5；Release 2972708 字节，SHA-256 19852d7509e2ad7b9ee793818fa14a156b391c2a6d32f6a5816252ab0b65121e。
+- 发布材料生成器重新验证实际 APK、副本/清单/大小/哈希一致；默认拒绝当前调试签名包，未上传。Markdown/编码/资源、git diff --check、Python/设备脚本和 CI YAML 静态检查通过。
+
+### 限制与接手
+
+当前 adb devices 为空、无 /dev/kvm。播放器测试证明事件与状态流程，不能代替 HLS/MP4 出画出声；实际模型、手机路由/扫码、固件安装器、遥控器、同证书升级和持续使用仍填 docs/13。正式密钥、递增版本、真实 URL 与线上 CI 结果待验收。回滚只撤销本轮对应差异，保留原工作区与用户文档，不做清空历史或破坏性迁移。
+
+## 2026-10-06 v0.0.2 正式发布准备
+
+用户授权发布正式版本。默认版本升级至 0.0.2/code2，保留包名和 API 19 基线；准备发布说明，新增 docs/15 记录实际证据与阻断。
+
+- 从原 GitHub v0.0.1 Release 下载实际 APK，确认 code1、SDK19/28、有效 v1 签名和 Android Debug 证书。原证书摘要 d507b831ebd7af498c550d0e24b84d1a10f218132ec9e6ce4c43d19f15c1e2d6，与云环境验证证书不同，原私钥未找到；已询问沿用原密钥或明确的新证书迁移方案，不以未回复为授权。
+- prepare_release.py 新增 --previous-apk / --allow-certificate-change；默认拒绝非递增版本与异证书，明确迁移才记录无法覆盖旧版。新增 6 项 Python 回归，全部通过，接入 CI。
+- v0.0.2 全量命令 testDebugUnitTest/testReleaseUnitTest/lintDebug/lintRelease/assembleDebug/assembleRelease 通过：1m52s、98 个任务，Debug/Release 各 181 项/31 类，0 失败/错误/跳过；两种 Lint 均 0 Error/0 Fatal/44 Warning。
+- 之后注入 GitHub 稳定 OTA 清单地址，通过本地 finalizeDsl 初始化脚本构建真正未签名候选，日志 BUILD SUCCESSFUL in 11s。实际 aapt/ZIP/apksigner 检查版本、SDK、清单地址、1 个 DEX 和无签名状态；2,909,854 字节，SHA-256 0b5622920dba59bbf22e25f7ed85b36d923b595c744eba88bda3e9d863946c5f。不能安装，签名后哈希需重算。
+- 实际调试签名 v0.0.2 在与上一版比对时被正确拒绝，未生成可误上传的 OTA 材料。原验证包与报告已备份，最新 Debug/未签名包证据更新到 VERIFICATION_REPORT.md。
+- Git 读取正常，main dry-run 无差异；GitHub API CONNECT 在 TLS 前返回代理 403。按云环境技能保存 api.github.com / uploads.github.com 网络配置草稿，保留原环境配置，尚待环境设置保存并应用；没有绕过代理、放宽 TLS 或索要新 GitHub token。
+
+尚未创建 v0.0.2 Release、正式签名 APK 或线上 update.json；缺少原私钥/明确证书方案及已应用的 API 网络配置。设备验收仍按 docs/13 如实记录，源码提交和后续发布以 docs/15 的最新记录为准。

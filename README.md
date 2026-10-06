@@ -1,73 +1,50 @@
 ﻿# TVBox 4.4（Android 4.4 兼容版）
 
-> **重要说明：本软件由 AI 参考 [ZxxXinI/tvbox](https://github.com/ZxxXinI/tvbox) 编写。**
->
-> 本项目是面向 Android 4.4（API 19）及以上设备的独立兼容版，与现代版 TVBox 分开维护；不代表上游项目的官方发布或官方背书。
+> 本软件由 AI 参考 [ZxxXinI/tvbox](https://github.com/ZxxXinI/tvbox) 编写，是独立维护的兼容版，不代表上游官方发布。
 
-当前版本：**v0.0.1**
+当前构建版本：**v0.0.2（发布候选）**，包名 `com.tvbox.android44`。最低 Android 4.4 / API 19；侧载发行，targetSdk 28、compileSdk 35。使用 Java + XML Views、ExoPlayer 2 和 OkHttp 3.12。
 
-面向 Android 4.4（API 19）及以上老电视/盒子的独立影视应用：传统 XML Views + ExoPlayer 2 旧坐标 + 单一 OkHttp 3.12 网络栈，无 Compose / Media3 / OkHttp4。
+## 当前功能
 
-## 发布信息
+- **视频源首页**：直接展示当前 MacCMS 来源的内容、父/子分类、父分类全部聚合与海报分页；两套主题和三档字体。
+- **点播**：多源增量搜索、晚到主源优先、详情渐进补线、H.264/AAC MP4 与未加密 HLS 播放、倍速/seek/上下集（媒体能力需目标盒子验证）。
+- **历史与播放管家**：最多 100 条历史、线路/集标题恢复、详情失败时确认尝试旧地址、后台顺序保存；缓冲轮询与受控换线、异步线路健康记录。
+- **AI 与扫码配置**：Chat Completions 兼容推荐；电视显示二维码，手机配置模型与自定义视频接口；临时会话到期或成功后主动关闭，离开页面取消旧请求。
+- **OTA**：可关闭的启动检查与提示去重、独立清单、强制 SHA-256、下载进度与取消、FileProvider 和系统安装器、API 26+ 未知来源授权。
+- 导航为历史、搜索、推荐、设置；数字键 **1 / 2 / 3 / 6**。电视和平台直播入口暂时隐藏。
 
-- 首个公开版本：`v0.0.1`
-- 最低系统：Android 4.4 / API 19
-- 发布类型：侧载 APK，不面向 Google Play
-- 应用包名：`com.tvbox.android44`
-- 原始参考项目：[https://github.com/ZxxXinI/tvbox](https://github.com/ZxxXinI/tvbox)
+首页不要求豆瓣。当前约定与设备验收见 [docs/13-当前版本基线与验收清单.md](docs/13-当前版本基线与验收清单.md)。
 
-## 功能
+## 构建与验证
 
-- **点播**：MacCMS 多来源（8 内置 + 自定义）聚合搜索（并发≤3、主源优先、增量展示）、分类浏览、详情多线路补线、ExoPlayer 播放（H.264/AAC/MP4/未加密 HLS）、倍速/seek/上下集。
-- **首页**：豆瓣热播（剧集/综艺/电影）+ 失败回退当前视频接口；点击豆瓣卡片后按片名搜索真实资源。
-- **历史与播放管家**：100 条观看历史、断点续播、线路健康统计（30 天）、连续/频繁/累计卡顿判定与自动换线。
-- **电视直播（IPTV）**：文本订阅、分组频道、多线路、数字选台、4 秒无进度看门狗换线。
-- **平台直播**：连接 `platform_live_server` 统一接口浏览平台/分类/房间（服务端另行部署）。
-- **AI 推荐**：OpenAI Chat Completions 兼容提供方（Agnes/DeepSeek/SiliconFlow/Qwen），推荐条目点击后进入普通搜索。
-- **局域网扫码配置**：电视生成二维码（AI 配置 :9978 / 自定义接口 :9979），手机扫码填写、一次性 token、会话自动关闭。
-- **OTA**：独立 update.json 清单、SHA-256 校验、FileProvider 调系统安装器。
-- 双主题（默认/影院）、三档字体、遥控器数字键 1~6 快速导航。
-
-## 构建
-
-环境：JDK 17 + Android SDK（compileSdk 35）。
+环境：JDK 17、Android SDK platform 35、build-tools 34.0.0 与 35.0.0；Gradle 8.10.2 的官方分发文件带 SHA-256 校验。
 
 ```bash
-export JAVA_HOME=/path/to/jdk17
-./gradlew assembleDebug          # 调试包
-./gradlew assembleRelease        # 发布包（签名参数经 local.properties 注入）
-./gradlew testDebugUnitTest      # 纯逻辑单元测试
-./gradlew lintDebug              # Lint
+bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease \
+  --no-daemon --max-workers=4 --console=plain
 ```
 
-`local.properties` 可注入（均可选，参考 `local.properties.example`）：
+APK 位于 `app/build/outputs/apk/debug/` 和 `release/`。测试覆盖纯领域逻辑及 Robolectric API 19/23/28；CI 在 `.github/workflows/android.yml`，上传 APK、测试、Lint 和验证清单材料。
 
-- `TVBOX_OTA_MANIFEST_URL`：更新清单地址（默认空 = 关闭检查）
-- `TVBOX_IPTV_SOURCE_URL`：IPTV 订阅默认地址
-- `TVBOX_PLATFORM_LIVE_SERVICE_URL`：平台直播服务默认地址
-- `TVBOX_STORE_FILE / TVBOX_STORE_PASSWORD / TVBOX_KEY_ALIAS / TVBOX_KEY_PASSWORD`：Release 签名
+设置项可通过 Gradle 属性、环境变量或未提交的 `local.properties` 注入，参考 [local.properties.example](local.properties.example)。正式发布配置原签名，递增 `TVBOX_VERSION_CODE`，启用 `TVBOX_REQUIRE_RELEASE_SIGNING=true`；未配置签名的 Release 仅为调试签名验证构建。
+
+发布材料由 [scripts/prepare_release.py](scripts/prepare_release.py) 从实际 APK 生成；默认拒绝调试证书，不执行上传或线上发布。完整命令与发布顺序见 `docs/13`。
 
 ## 安装与使用
 
-1. 侧载 APK 到电视/盒子（minSdk 19，targetSdk 28，支持普通与 Leanback 桌面入口）。
-2. 首次使用建议先「设置 → 视频源」确认/切换可用接口，或「扫码添加接口」自定义源。
-3. AI 推荐、IPTV、平台直播均为外部服务：不可用时会降级提示，不影响点播。
+1. 侧载 APK 到 API 19 或以上测试设备。
+2. 设置中选择可用视频接口，或扫码添加自定义 MacCMS 接口。
+3. 首页直接浏览该源内容；AI 推荐需配置实际可用的模型服务。
 
-## 验证状态（证据分层）
+发布进度、签名基线与待解决项见 [发布记录](docs/15-v0.0.2发布准备与记录.md)。
 
-| 层级 | 状态 |
-| --- | --- |
-| 静态（构建/Lint/依赖树） | ✅ assembleDebug / lintDebug 通过，依赖树无 API21+ 阻断 |
-| 自动化（单元测试） | ✅ 69 个纯 JVM 用例（解析器/合并/换线/卡顿判定/OTA）全部通过 |
-| 运行（真机 Android 9 API28 小米电视） | ✅ 冷启动、豆瓣首页、多来源搜索、详情补线、H.264 播放出画、seek、历史、扫码配置端到端、AI 错误路径 |
-| 运行（API 19 实机） | ❌ 暂无 API 19 设备，TLS/媒体/遥控器最终结论以 API 19 实机为准 |
+## 验证与接手
 
-## 目录
+本轮构建、测试、签名和 Lint 结果见 [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)。本云环境没有连接设备，API 19 的安装、真实出画出声与遥控器结论仍待设备验收。
 
-- `app/src/main/java/com/tvbox/android44/`：common（UI/常量/执行器）、domain（模型/解析器/播放逻辑）、data（本地存储/远端客户端/仓库）、feature（页面）。
-- `docs/`（工程根上级）：产品与规则文档（总规则、兼容性、各模块规则、任务单）。
-- `AI_DEV_LOG.md`：逐轮开发日志；`HANDOFF.md`：交接与剩余任务。
+- [文档入口](docs/README.md)
+- [接手说明](HANDOFF.md)
+- [开发日志](AI_DEV_LOG.md)
+- [变更记录](CHANGELOG.md)
 
-## 许可与内容声明
-
-本工程不打包任何影视内容、直播源凭据或 API Key；所有内容由使用者自行配置并确认授权。仅供学习交流。
+历史开发日志中的设备结果仅对应当时版本，不替代本轮验收。

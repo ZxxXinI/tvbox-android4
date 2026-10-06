@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:background="@drawable/bg_chip"
-            android:hint="输入影片名搜索"
+            android:hint="@string/search_input_hint"
             android:imeOptions="actionSearch"
             android:inputType="text"
             android:maxLines="1"
@@ -38,7 +38,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginLeft="14dp"
-            android:text="搜索" />
+            android:text="@string/nav_search" />
     </LinearLayout>
 
     <TextView

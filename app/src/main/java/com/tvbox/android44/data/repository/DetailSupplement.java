@@ -73,7 +73,7 @@ public class DetailSupplement {
             TvBoxApp.get().executors().main(new Runnable() {
                 @Override
                 public void run() {
-                    listener.onDone();
+                    if (!scope.isCancelled()) listener.onDone();
                 }
             });
             return new Handle(scope, futures);
@@ -152,7 +152,7 @@ public class DetailSupplement {
                 Movie rich = com.tvbox.android44.data.remote.MacCmsMapper.toMovie(
                         line, dto.list.get(0), true);
                 if (rich != null && !rich.playSources.isEmpty()) {
-                    appendLines(mainDetail, rich, listener);
+                    appendLines(mainDetail, rich, scope, listener);
                     MultiSourceSearch.stats(line.id).lastSuccessAt = System.currentTimeMillis();
                 }
             }
@@ -165,7 +165,17 @@ public class DetailSupplement {
     }
 
     /** 把替代来源的线路按稳定 lineId 去重后追加；追加后主线程通知。 */
-    private void appendLines(final Movie mainDetail, Movie other, final Listener listener) {
+    private void appendLines(final Movie mainDetail, final Movie other, final CancelScope scope,
+                             final Listener listener) {
+        TvBoxApp.get().executors().main(new Runnable() {
+            public void run() {
+                if (scope.isCancelled()) return;
+                mergeLines(mainDetail, other, listener);
+            }
+        });
+    }
+
+    static void mergeLines(final Movie mainDetail, Movie other, final Listener listener) {
         int appended = 0;
         synchronized (mainDetail) {
             for (PlaySource ps : other.playSources) {
@@ -187,31 +197,31 @@ public class DetailSupplement {
         }
         if (appended > 0) {
             final int count = appended;
-            TvBoxApp.get().executors().main(new Runnable() {
-                @Override
-                public void run() {
-                    listener.onLineAppended(mainDetail, count);
-                }
-            });
+            listener.onLineAppended(mainDetail, count);
         }
     }
 
     /** 匹配规则：规范化名相等（含年份相等加分）> 包含。 */
     static Movie bestMatch(Movie target, List<Movie> candidates) {
         String tName = NameNormalizer.normalize(target.name);
+        if (tName.isEmpty()) return null;
         String tYear = NameNormalizer.normalizeYear(target.year);
         Movie equal = null;
         Movie contains = null;
         for (Movie c : candidates) {
+            if (c == null) continue;
             String cName = NameNormalizer.normalize(c.name);
+            if (cName.isEmpty()) continue;
             if (cName.equals(tName)) {
                 String cYear = NameNormalizer.normalizeYear(c.year);
-                if (tYear.isEmpty() || cYear.isEmpty() || tYear.equals(cYear)) {
+                if (!tYear.isEmpty() && tYear.equals(cYear)) return c;
+                if (tYear.isEmpty() || cYear.isEmpty()) {
                     if (equal == null) {
                         equal = c;
                     }
                     continue;
                 }
+                continue;
             }
             if (contains == null && (cName.contains(tName) || tName.contains(cName))) {
                 contains = c;

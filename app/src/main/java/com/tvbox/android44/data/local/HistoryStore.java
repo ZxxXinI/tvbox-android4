@@ -24,25 +24,26 @@ public class HistoryStore {
     private List<WatchHistoryItem> cache;
 
     public HistoryStore(Context context) {
-        file = new File(context.getFilesDir(), "history.json");
+        this(new File(context.getFilesDir(), "history.json"));
     }
+
+    HistoryStore(File file) { this.file = file; }
 
     public synchronized List<WatchHistoryItem> load() {
         if (cache == null) {
             HistoryList wrapper = JsonIo.read(file, HistoryList.class);
-            cache = wrapper != null && wrapper.items != null
-                    ? wrapper.items : new ArrayList<WatchHistoryItem>();
+            cache = normalize(wrapper != null ? wrapper.items : null);
         }
-        return cache;
+        return snapshot(cache);
     }
 
-    public synchronized void addOrUpdate(WatchHistoryItem item) {
-        if (item == null) {
-            return;
+    public synchronized boolean addOrUpdate(WatchHistoryItem item) {
+        if (!valid(item)) {
+            return false;
         }
         List<WatchHistoryItem> list = load();
         List<WatchHistoryItem> next = new ArrayList<WatchHistoryItem>();
-        next.add(item);
+        next.add(new WatchHistoryItem(item));
         for (WatchHistoryItem h : list) {
             if (!h.key().equals(item.key())) {
                 next.add(h);
@@ -51,32 +52,63 @@ public class HistoryStore {
         while (next.size() > AppConstants.HISTORY_MAX) {
             next.remove(next.size() - 1);
         }
-        save(next);
+        return save(normalize(next));
     }
 
     public synchronized WatchHistoryItem find(String apiLineId, String movieId) {
         for (WatchHistoryItem h : load()) {
             if (h.apiLineId.equals(apiLineId) && h.movieId.equals(movieId)) {
-                return h;
+                return new WatchHistoryItem(h);
             }
         }
         return null;
     }
 
-    public synchronized void clear() {
-        save(new ArrayList<WatchHistoryItem>());
+    public synchronized boolean clear() {
+        return save(new ArrayList<WatchHistoryItem>());
     }
 
-    private void save(List<WatchHistoryItem> items) {
-        cache = items;
+    private boolean save(List<WatchHistoryItem> items) {
         HistoryList wrapper = new HistoryList();
         wrapper.items = items;
         try {
             JsonIo.write(file, wrapper);
         } catch (Exception e) {
-            // 写失败保留内存值；下次成功写入覆盖
+            return false;
         }
+        cache = items;
         notifyListeners();
+        return true;
+    }
+
+    private static boolean valid(WatchHistoryItem item) {
+        return item != null && item.apiLineId != null && !item.apiLineId.isEmpty()
+                && item.movieId != null && !item.movieId.isEmpty();
+    }
+
+    private static List<WatchHistoryItem> snapshot(List<WatchHistoryItem> items) {
+        List<WatchHistoryItem> result = new ArrayList<WatchHistoryItem>();
+        for (WatchHistoryItem item : items) result.add(new WatchHistoryItem(item));
+        return result;
+    }
+
+    private static List<WatchHistoryItem> normalize(List<WatchHistoryItem> items) {
+        List<WatchHistoryItem> result = new ArrayList<WatchHistoryItem>();
+        if (items != null) for (WatchHistoryItem item : items) {
+            if (valid(item)) result.add(new WatchHistoryItem(item));
+        }
+        java.util.Collections.sort(result, new java.util.Comparator<WatchHistoryItem>() {
+            public int compare(WatchHistoryItem a, WatchHistoryItem b) {
+                return Long.compare(b.updatedAt, a.updatedAt);
+            }
+        });
+        java.util.Set<String> seen = new java.util.HashSet<String>();
+        List<WatchHistoryItem> unique = new ArrayList<WatchHistoryItem>();
+        for (WatchHistoryItem item : result) {
+            if (seen.add(item.key())) unique.add(item);
+            if (unique.size() >= AppConstants.HISTORY_MAX) break;
+        }
+        return unique;
     }
 
     public void addListener(Listener l) {

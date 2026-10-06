@@ -1,0 +1,48 @@
+name: Android validation
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Install pinned SDK components
+        run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0' 'build-tools;35.0.0' 'platform-tools'
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Tests, lint and Debug/Release validation builds
+        run: bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease --no-daemon --max-workers=4 --console=plain
+      - name: Release version and signing continuity regression tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - name: Verify API 19 APK and generate sample OTA metadata
+        run: >-
+          python3 scripts/prepare_release.py
+          --apk app/build/outputs/apk/release/app-release.apk
+          --apk-url https://example.com/validation/app-release.apk
+          --output-dir app/build/release-validation
+          --allow-debug-signing
+          --changelog 'CI validation build; requires formal signing before publication'
+      - name: Upload builds and verification reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-validation
+          retention-days: 14
+          path: |
+            app/build/outputs/apk/
+            app/build/reports/tests/
+            app/build/test-results/
+            app/build/reports/lint-results-*
+            app/build/release-validation/

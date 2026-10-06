@@ -19,6 +19,8 @@ import com.tvbox.android44.common.BaseActivity;
 import com.tvbox.android44.common.FocusScaler;
 import com.tvbox.android44.common.Result;
 import com.tvbox.android44.common.StateLayout;
+import com.tvbox.android44.common.PageFocusState;
+import com.tvbox.android44.common.TvDialogs;
 import com.tvbox.android44.common.ui.ChipAdapter;
 import com.tvbox.android44.common.ui.GridSpacingDecoration;
 import com.tvbox.android44.data.local.SettingsRepository;
@@ -30,6 +32,7 @@ import com.tvbox.android44.domain.model.PlayEpisode;
 import com.tvbox.android44.domain.model.PlaySource;
 import com.tvbox.android44.domain.model.WatchHistoryItem;
 import com.tvbox.android44.feature.player.PlayerActivity;
+import com.tvbox.android44.domain.playback.PlaybackSelection;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -43,13 +46,21 @@ public class DetailActivity extends BaseActivity {
     public static final String EXTRA_API_ID = "apiId";
     public static final String EXTRA_MOVIE_ID = "movieId";
 
-    private static final int REQ_PLAYER = 1001;
+    private static final int REQUEST_DETAIL = 1001;
 
     public static void startForResult(Activity from, String apiId, String movieId) {
         Intent intent = new Intent(from, DetailActivity.class);
         intent.putExtra(EXTRA_API_ID, apiId);
         intent.putExtra(EXTRA_MOVIE_ID, movieId);
-        from.startActivityForResult(intent, REQ_PLAYER);
+        from.startActivityForResult(intent, REQUEST_DETAIL);
+    }
+
+    public static void startForHistory(Activity from, WatchHistoryItem history) {
+        Intent intent = new Intent(from, DetailActivity.class);
+        intent.putExtra(EXTRA_API_ID, history.apiLineId);
+        intent.putExtra(EXTRA_MOVIE_ID, history.movieId);
+        intent.putExtra(PlayerActivity.EXTRA_HISTORY_ITEM, new WatchHistoryItem(history));
+        from.startActivityForResult(intent, REQUEST_DETAIL);
     }
 
     private StateLayout state;
@@ -74,6 +85,12 @@ public class DetailActivity extends BaseActivity {
     private String selectedLineId;
     private int selectedEpisode = -1;
     private boolean descExpanded;
+    private Bundle pendingFocus;
+    private String restoredLine;
+    private int restoredEpisode = -1;
+    private WatchHistoryItem resumeHistory;
+    private boolean fallbackOffered;
+    private View.OnLayoutChangeListener episodeFocusListener;
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -81,6 +98,16 @@ public class DetailActivity extends BaseActivity {
         setContentView(R.layout.activity_detail);
         apiId = getIntent().getStringExtra(EXTRA_API_ID);
         movieId = getIntent().getStringExtra(EXTRA_MOVIE_ID);
+        resumeHistory = (WatchHistoryItem) getIntent().getSerializableExtra(PlayerActivity.EXTRA_HISTORY_ITEM);
+        if (savedInstanceState != null) {
+            restoredLine = savedInstanceState.getString("line");
+            restoredEpisode = savedInstanceState.getInt("episode", -1);
+            pendingFocus = savedInstanceState.getBundle("focus");
+            descExpanded = savedInstanceState.getBoolean("expanded");
+            fallbackOffered = savedInstanceState.getBoolean("fallbackOffered");
+            WatchHistoryItem savedHistory = (WatchHistoryItem) savedInstanceState.getSerializable(PlayerActivity.EXTRA_HISTORY_ITEM);
+            if (savedHistory != null) resumeHistory = savedHistory;
+        }
 
         state = findViewById(R.id.detail_state);
         title = findViewById(R.id.detail_title);
@@ -145,7 +172,22 @@ public class DetailActivity extends BaseActivity {
             }
         });
 
-        loadDetail();
+        if (resumeHistory != null) loadDetail();
+        else {
+            state.showLoading(null);
+            TvBoxApp.get().executors().disk().execute(new Runnable() {
+                @Override public void run() {
+                    final WatchHistoryItem history = TvBoxApp.get().history().find(apiId, movieId);
+                    TvBoxApp.get().executors().main(new Runnable() {
+                        @Override public void run() {
+                            if (isFinishing() || isDestroyed()) return;
+                            resumeHistory = history;
+                            loadDetail();
+                        }
+                    });
+                }
+            });
+        }
     }
 
     private void loadDetail() {
@@ -164,7 +206,7 @@ public class DetailActivity extends BaseActivity {
                 new MovieRepository.Callback<Movie>() {
                     @Override
                     public void onResult(Result<Movie> result) {
-                        if (!isFinishing()) {
+                        if (!isFinishing() && !isDestroyed()) {
                             onMainDetail(result);
                         }
                     }
@@ -189,6 +231,18 @@ public class DetailActivity extends BaseActivity {
                             loadDetail();
                         }
                     });
+            if (!fallbackOffered && resumeHistory != null && resumeHistory.episodeUrl != null
+                    && okhttp3.HttpUrl.parse(resumeHistory.episodeUrl) != null) {
+                fallbackOffered = true;
+                TvDialogs.confirm(this, getString(R.string.history_fallback_title),
+                        getString(R.string.history_fallback_message), new TvDialogs.ConfirmListener() {
+                            @Override public void onConfirm() {
+                                if (!isFinishing() && !isDestroyed()) {
+                                    PlayerActivity.startForResultWithHistory(DetailActivity.this, resumeHistory, true);
+                                }
+                            }
+                        });
+            }
             return;
         }
         movie = result.data();
@@ -196,10 +250,11 @@ public class DetailActivity extends BaseActivity {
         state.showContent();
         startSupplement();
         if (movie.playSources.isEmpty()) {
-            status.setText("暂无可播放线路，可稍后重试或换接口");
+            status.setText(R.string.detail_no_lines);
             status.setVisibility(View.VISIBLE);
         }
-        playBtn.requestFocus();
+        if (!PageFocusState.restore(findViewById(android.R.id.content), pendingFocus)) playBtn.requestFocus();
+        pendingFocus = null;
     }
 
     private void renderDetail() {
@@ -227,38 +282,27 @@ public class DetailActivity extends BaseActivity {
         }
 
         // 历史恢复：同名线路 + 同标题集优先
-        WatchHistoryItem h = TvBoxApp.get().history().find(movie.apiLineId, movie.id);
-        String preferLine = h != null ? h.lineId : null;
-        int preferEpisode = h != null ? h.episodeIndex : 0;
+        WatchHistoryItem h = resumeHistory;
+        WatchHistoryItem preference = h;
+        if (restoredLine != null || restoredEpisode >= 0) {
+            preference = new WatchHistoryItem();
+            preference.lineId = restoredLine;
+            preference.episodeIndex = Math.max(0, restoredEpisode);
+        }
+        PlaybackSelection selection = PlaybackSelection.resolve(movie, preference, false);
+        desc.setMaxLines(descExpanded ? Integer.MAX_VALUE : 3);
 
         List<ChipAdapter.Chip> chips = new ArrayList<ChipAdapter.Chip>();
-        String defaultLine = defaultLineId(preferLine);
+        String defaultLine = selection == null ? "" : selection.source.lineId;
         for (PlaySource ps : movie.playSources) {
             chips.add(new ChipAdapter.Chip(ps.lineId, lineLabel(ps), ps.lineId.equals(defaultLine)));
         }
         lineAdapter.setChips(chips);
         selectedLineId = defaultLine;
+        selectedEpisode = selection == null ? -1 : selection.episodeIndex;
         selectLine(defaultLine, false);
-        selectedEpisode = preferEpisode;
-        if (h != null) {
-            // 按集标题匹配
-            PlaySource source = findSource(selectedLineId);
-            if (source != null && h.episodeTitle != null) {
-                for (int i = 0; i < source.episodes.size(); i++) {
-                    if (h.episodeTitle.equals(source.episodes.get(i).title)) {
-                        selectedEpisode = i;
-                        break;
-                    }
-                }
-                if (selectedEpisode >= source.episodes.size()) {
-                    selectedEpisode = 0;
-                }
-            }
-            continueBtn.setText("继续播放 第" + (selectedEpisode + 1) + "集");
-        } else {
-            continueBtn.setText("从第1集播放");
-        }
-        episodeAdapter.setSelected(selectedEpisode);
+        continueBtn.setText(h == null ? getString(R.string.play_first_episode)
+                : getString(R.string.continue_episode, Math.max(0, selectedEpisode) + 1));
     }
 
     private String lineLabel(PlaySource ps) {
@@ -318,7 +362,7 @@ public class DetailActivity extends BaseActivity {
         }
         selectedLineId = lineId;
         lineAdapter.setSelected(lineId);
-        episodeAdapter.setEpisodes(source.episodes, selectedEpisode);
+        episodeAdapter.setEpisodes(lineId, source.episodes, selectedEpisode);
         if (fromUser && currentTitle != null) {
             for (int i = 0; i < source.episodes.size(); i++) {
                 if (source.episodes.get(i).title.equals(currentTitle)) {
@@ -356,15 +400,14 @@ public class DetailActivity extends BaseActivity {
                             ps.lineId.equals(selectedLineId)));
                 }
                 lineAdapter.setChips(chips);
-                status.setText("已找到 " + movie.playSources.size() + " 条线路（新增 " + appendedLineCount + "）");
+                status.setText(getString(R.string.detail_lines_added, movie.playSources.size(), appendedLineCount));
                 status.setVisibility(View.VISIBLE);
             }
 
             @Override
             public void onProgress(int completedSources, int totalSources) {
                 if (!isFinishing()) {
-                    status.setText("已找到 " + movie.playSources.size() + " 条线路 · 补线中 "
-                            + completedSources + "/" + totalSources);
+                    status.setText(getString(R.string.detail_lines_progress, movie.playSources.size(), completedSources, totalSources));
                     status.setVisibility(View.VISIBLE);
                 }
             }
@@ -373,7 +416,7 @@ public class DetailActivity extends BaseActivity {
             public void onDone() {
                 if (!isFinishing()) {
                     if (movie.playSources.size() > 1) {
-                        status.setText("共 " + movie.playSources.size() + " 条线路");
+                        status.setText(getString(R.string.detail_lines_total, movie.playSources.size()));
                     }
                 }
             }
@@ -395,10 +438,9 @@ public class DetailActivity extends BaseActivity {
     }
 
     private void playFromHistory() {
-        WatchHistoryItem h = TvBoxApp.get().history().find(apiId, movie.id);
+        WatchHistoryItem h = resumeHistory;
         if (h != null) {
-            PlayerActivity.startForResultWithHistory(this, apiId, movieId, h.lineId,
-                    h.episodeIndex, h.position, h.episodeUrl, h.episodeTitle);
+            PlayerActivity.startForResultWithHistory(this, h, false);
         } else {
             playEpisode(0);
         }
@@ -407,27 +449,59 @@ public class DetailActivity extends BaseActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == REQ_PLAYER) {
-            // 播放器返回：恢复选集焦点
-            if (episodeAdapter != null && selectedEpisode >= 0) {
-                RecyclerView.ViewHolder vh =
-                        episodesView.findViewHolderForAdapterPosition(selectedEpisode);
-                if (vh != null) {
-                    vh.itemView.requestFocus();
-                } else {
-                    episodesView.scrollToPosition(selectedEpisode);
+        if (requestCode == PlayerActivity.REQUEST_PLAYBACK && movie != null) {
+            WatchHistoryItem returned = data == null ? null
+                    : (WatchHistoryItem) data.getSerializableExtra(PlayerActivity.EXTRA_HISTORY_ITEM);
+            if (resultCode == RESULT_OK && returned != null
+                    && apiId.equals(returned.apiLineId) && movieId.equals(returned.movieId)) {
+                resumeHistory = new WatchHistoryItem(returned);
+                PlaybackSelection selection = PlaybackSelection.resolve(movie, returned, false);
+                if (selection != null) {
+                    selectedEpisode = selection.episodeIndex;
+                    selectLine(selection.source.lineId, false);
+                    continueBtn.setText(getString(R.string.continue_episode, selectedEpisode + 1));
                 }
             }
-            // 刷新历史继续播放按钮
-            WatchHistoryItem h = TvBoxApp.get().history().find(apiId, movie.id);
-            if (h != null && movie != null) {
-                continueBtn.setText("继续播放 第" + (h.episodeIndex + 1) + "集");
-            }
+            restoreEpisodeFocus();
         }
+    }
+
+    private void restoreEpisodeFocus() {
+        if (selectedEpisode < 0) return;
+        if (episodeFocusListener != null) episodesView.removeOnLayoutChangeListener(episodeFocusListener);
+        final int target = selectedEpisode;
+        final Runnable focus = new Runnable() {
+            @Override public void run() {
+                if (isFinishing() || isDestroyed() || selectedEpisode != target) return;
+                RecyclerView.ViewHolder holder = episodesView.findViewHolderForAdapterPosition(target);
+                if (holder != null) {
+                    holder.itemView.requestFocus();
+                    if (episodeFocusListener != null) episodesView.removeOnLayoutChangeListener(episodeFocusListener);
+                    episodeFocusListener = null;
+                }
+            }
+        };
+        episodeFocusListener = new View.OnLayoutChangeListener() {
+            @Override public void onLayoutChange(View view, int l, int t, int r, int b, int ol, int ot, int or, int ob) { focus.run(); }
+        };
+        episodesView.addOnLayoutChangeListener(episodeFocusListener);
+        episodesView.scrollToPosition(target);
+        episodesView.post(focus);
+    }
+
+    @Override protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString("line", selectedLineId);
+        out.putInt("episode", selectedEpisode);
+        out.putBoolean("expanded", descExpanded);
+        out.putBundle("focus", PageFocusState.capture(findViewById(android.R.id.content)));
+        out.putSerializable(PlayerActivity.EXTRA_HISTORY_ITEM, resumeHistory);
+        out.putBoolean("fallbackOffered", fallbackOffered);
     }
 
     @Override
     protected void onDestroy() {
+        if (episodeFocusListener != null) episodesView.removeOnLayoutChangeListener(episodeFocusListener);
         if (detailRequest != null) {
             detailRequest.cancel();
         }

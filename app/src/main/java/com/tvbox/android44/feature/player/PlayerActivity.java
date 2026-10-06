@@ -1,6 +1,5 @@
 package com.tvbox.android44.feature.player;
 
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioManager;
@@ -19,23 +18,20 @@ import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.android.exoplayer2.DefaultRenderersFactory;
+import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.PlaybackException;
-import com.google.android.exoplayer2.MediaItem;
 import com.google.android.exoplayer2.PlaybackParameters;
 import com.google.android.exoplayer2.Player;
 import com.google.android.exoplayer2.SimpleExoPlayer;
 import com.google.android.exoplayer2.source.MediaSource;
-import com.google.android.exoplayer2.source.ProgressiveMediaSource;
 import com.google.android.exoplayer2.trackselection.DefaultTrackSelector;
 import com.google.android.exoplayer2.ui.PlayerView;
 import com.google.android.exoplayer2.upstream.DataSource;
 import com.google.android.exoplayer2.upstream.DefaultDataSourceFactory;
-import com.google.android.exoplayer2.source.hls.HlsMediaSource;
 import com.tvbox.android44.R;
 import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.common.Result;
-import com.tvbox.android44.data.local.HealthStore;
 import com.tvbox.android44.data.repository.MovieRepository;
 import com.tvbox.android44.data.remote.HttpClients;
 import com.tvbox.android44.domain.model.ApiLine;
@@ -46,10 +42,10 @@ import com.tvbox.android44.domain.model.PlaySource;
 import com.tvbox.android44.domain.model.WatchHistoryItem;
 import com.tvbox.android44.domain.playback.AutoSwitchPolicy;
 import com.tvbox.android44.domain.playback.BufferJudger;
+import com.tvbox.android44.domain.playback.PlaybackSelection;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * 点播播放器：
@@ -65,6 +61,9 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     public static final String EXTRA_EPISODE = "episode";
     public static final String EXTRA_RESUME_POSITION = "resumePos";
     public static final String EXTRA_FALLBACK_URL = "fallbackUrl";
+    public static final String EXTRA_HISTORY_ITEM = "historyItem";
+    public static final String EXTRA_USE_LAST_URL = "useLastUrl";
+    public static final int REQUEST_PLAYBACK = 2001;
 
     private static final int MSG_SAVE_HISTORY = 1;
     private static final int MSG_UPDATE_TIME = 2;
@@ -76,25 +75,35 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         i.putExtra(EXTRA_MOVIE_ID, movieId);
         i.putExtra(EXTRA_LINE_ID, lineId);
         i.putExtra(EXTRA_EPISODE, episodeIndex);
-        from.startActivityForResult(i, 2001);
+        from.startActivityForResult(i, REQUEST_PLAYBACK);
     }
 
     public static void startForResultWithHistory(android.app.Activity from, String apiId,
                                                   String movieId, String lineId, int episodeIndex,
                                                   long resumePosition, String fallbackUrl,
                                                   String episodeTitle) {
-        Intent i = new Intent(from, PlayerActivity.class);
-        i.putExtra(EXTRA_API_ID, apiId);
-        i.putExtra(EXTRA_MOVIE_ID, movieId);
-        i.putExtra(EXTRA_LINE_ID, lineId);
-        i.putExtra(EXTRA_EPISODE, episodeIndex);
-        i.putExtra(EXTRA_RESUME_POSITION, resumePosition);
-        i.putExtra(EXTRA_FALLBACK_URL, fallbackUrl);
-        from.startActivityForResult(i, 2001);
+        WatchHistoryItem saved = new WatchHistoryItem();
+        saved.apiLineId = apiId; saved.movieId = movieId; saved.lineId = lineId;
+        saved.episodeIndex = episodeIndex; saved.position = resumePosition;
+        saved.episodeUrl = fallbackUrl; saved.episodeTitle = episodeTitle;
+        startForResultWithHistory(from, saved, false);
+    }
+
+    public static void startForResultWithHistory(android.app.Activity from, WatchHistoryItem saved, boolean useLastUrl) {
+        Intent intent = new Intent(from, PlayerActivity.class);
+        intent.putExtra(EXTRA_API_ID, saved.apiLineId);
+        intent.putExtra(EXTRA_MOVIE_ID, saved.movieId);
+        intent.putExtra(EXTRA_LINE_ID, saved.lineId);
+        intent.putExtra(EXTRA_EPISODE, saved.episodeIndex);
+        intent.putExtra(EXTRA_RESUME_POSITION, saved.position);
+        intent.putExtra(EXTRA_FALLBACK_URL, saved.episodeUrl);
+        intent.putExtra(EXTRA_HISTORY_ITEM, new WatchHistoryItem(saved));
+        intent.putExtra(EXTRA_USE_LAST_URL, useLastUrl);
+        from.startActivityForResult(intent, REQUEST_PLAYBACK);
     }
 
     private PlayerView playerView;
-    private SimpleExoPlayer player;
+    private ExoPlayer player;
     private PlayerControllerView controller;
     private ProgressBar buffering;
     private TextView hint;
@@ -107,6 +116,14 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     private int episodeIndex;
     private long resumePosition;
     private String fallbackUrl;
+    private WatchHistoryItem resumeHistory;
+    private VodMediaSources mediaSources;
+    private boolean mediaHls;
+    private boolean mediaFallbackUsed;
+    private boolean stopped;
+    private boolean usingLastUrl;
+    private boolean resumeWhenVisible = true;
+    private boolean restoringSession;
 
     private Movie movie;
     private PlaySource currentSource;
@@ -131,7 +148,8 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                 scheduleHistorySave();
             } else if (msg.what == MSG_UPDATE_TIME) {
                 updateUiTime();
-                sendEmptyMessageDelayed(MSG_UPDATE_TIME, 500);
+                pollBuffering();
+                if (!stopped && player != null) sendEmptyMessageDelayed(MSG_UPDATE_TIME, 500);
             }
         }
     };
@@ -147,6 +165,15 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         episodeIndex = getIntent().getIntExtra(EXTRA_EPISODE, 0);
         resumePosition = getIntent().getLongExtra(EXTRA_RESUME_POSITION, 0);
         fallbackUrl = getIntent().getStringExtra(EXTRA_FALLBACK_URL);
+        resumeHistory = (WatchHistoryItem) getIntent().getSerializableExtra(EXTRA_HISTORY_ITEM);
+        if (savedInstanceState != null) {
+            restoringSession = true;
+            resumeHistory = (WatchHistoryItem) savedInstanceState.getSerializable(EXTRA_HISTORY_ITEM);
+            if (resumeHistory != null) {
+                lineId = resumeHistory.lineId; episodeIndex = resumeHistory.episodeIndex;
+                resumePosition = resumeHistory.position;
+            }
+        }
 
         playerView = findViewById(R.id.player_view);
         buffering = findViewById(R.id.player_buffering);
@@ -226,7 +253,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             public void onLongPressSpeed() {
                 if (player != null) {
                     player.setPlaybackParameters(new PlaybackParameters(2.0f));
-                    showHint("2倍速播放中");
+                    showHint(getString(R.string.player_double_speed));
                 }
             }
 
@@ -247,7 +274,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                 long pos = player.getCurrentPosition();
                 long deltaMs = (long) (deltaPx * 600);
                 seekTargetFromDrag = Math.max(0, Math.min(pos + deltaMs, duration));
-                showHint("快进到 " + PlayerControllerView.formatTime(seekTargetFromDrag));
+                showHint(getString(R.string.player_seek_to, PlayerControllerView.formatTime(seekTargetFromDrag)));
             }
 
             @Override
@@ -275,13 +302,13 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                     WindowManager.LayoutParams lp = getWindow().getAttributes();
                     lp.screenBrightness = next;
                     getWindow().setAttributes(lp);
-                    showHint("亮度 " + (int) (next * 100) + "%");
+                    showHint(getString(R.string.player_brightness, (int) (next * 100)));
                 } else {
                     int max = audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC);
                     int cur = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC);
                     int next = Math.max(0, Math.min(max, cur + delta / 20));
                     audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, next, 0);
-                    showHint("音量 " + next + "/" + max);
+                    showHint(getString(R.string.player_volume, next, max));
                 }
             }
         }).bind(playerView);
@@ -290,7 +317,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         judger = new BufferJudger(BufferJudger.Mode.VOD, new BufferJudger.Clock() {
             @Override
             public long now() {
-                return SystemClockBridge.elapsedRealtime();
+                return playbackTime();
             }
         });
 
@@ -309,14 +336,11 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             }
         });
 
-        loadDetailAndPlay();
+        if (getIntent().getBooleanExtra(EXTRA_USE_LAST_URL, false)) tryFallbackUrl();
+        else loadDetailAndPlay();
     }
 
-    private static final class SystemClockBridge {
-        static long elapsedRealtime() {
-            return android.os.SystemClock.elapsedRealtime();
-        }
-    }
+    protected long playbackTime() { return android.os.SystemClock.elapsedRealtime(); }
 
     // ===== 数据与创建 =====
 
@@ -331,7 +355,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                 new MovieRepository.Callback<Movie>() {
                     @Override
                     public void onResult(Result<Movie> result) {
-                        if (isFinishing()) {
+                        if (isFinishing() || isDestroyed()) {
                             return;
                         }
                         if (result.isSuccess() && result.data() != null) {
@@ -346,12 +370,24 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
 
     private void tryFallbackUrl() {
         // 历史恢复：详情取不到时短期尝试旧地址（提示用户）
-        if (fallbackUrl != null && (fallbackUrl.startsWith("http://")
-                || fallbackUrl.startsWith("https://"))) {
-            showHint("原播放线路可能已更新，正在尝试上次地址");
-            movie = new Movie(movieId, apiId, "", "历史播放");
-            currentSource = new PlaySource(lineId, "临时", "历史");
-            currentEpisode = new PlayEpisode(episodeIndex, "上次的集", fallbackUrl);
+        if (fallbackUrl != null && okhttp3.HttpUrl.parse(fallbackUrl) != null) {
+            usingLastUrl = true;
+            if (lineId == null || lineId.isEmpty()) lineId = "history";
+            showHint(getString(R.string.player_fallback_hint));
+            movie = new Movie(movieId, apiId, resumeHistory == null ? "" : resumeHistory.apiLineName,
+                    resumeHistory == null || resumeHistory.movieName == null ? getString(R.string.history_playback) : resumeHistory.movieName);
+            if (resumeHistory != null) {
+                movie.posterUrl = resumeHistory.posterUrl; movie.typeName = resumeHistory.typeName;
+                movie.remarks = resumeHistory.remarks;
+                if (resumeHistory.duration > 0 && resumePosition >= resumeHistory.duration * AppConstants.HISTORY_END_RESTART_RATIO) resumePosition = 0;
+            }
+            currentSource = new PlaySource(lineId, resumeHistory == null ? getString(R.string.history_line) : resumeHistory.lineName,
+                    resumeHistory == null ? getString(R.string.history_playback) : resumeHistory.apiLineName);
+            // A one-item temporary playlist has no valid previous/next episode.
+            currentEpisode = new PlayEpisode(0, resumeHistory == null ? getString(R.string.history_episode) : resumeHistory.episodeTitle, fallbackUrl);
+            currentSource.episodes.add(currentEpisode);
+            movie.playSources.add(currentSource);
+            episodeIndex = 0;
             startPlayback();
         } else {
             showError("影片详情加载失败，请返回重试");
@@ -359,37 +395,21 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     }
 
     private void resolveLineAndEpisode() {
-        // 历史位置距片尾过近时从头/下一集开始
-        if (resumePosition > 0 && currentEpisodeDurationFromHistory() > 0) {
-            long dur = currentEpisodeDurationFromHistory();
-            if (resumePosition >= (long) (dur * AppConstants.HISTORY_END_RESTART_RATIO)) {
-                PlaySource s = findSource(lineId);
-                if (s != null && episodeIndex + 1 < s.episodes.size()) {
-                    episodeIndex++;
-                } else {
-                    resumePosition = 0;
-                }
-            }
+        WatchHistoryItem selection = resumeHistory;
+        if (selection == null) {
+            selection = new WatchHistoryItem();
+            selection.lineId = lineId; selection.episodeIndex = episodeIndex;
+            selection.position = resumePosition;
         }
-        currentSource = findSource(lineId);
-        if (currentSource == null && !movie.playSources.isEmpty()) {
-            currentSource = movie.playSources.get(0);
-            lineId = currentSource.lineId;
-        }
-        if (currentSource == null || currentSource.episodes.isEmpty()) {
+        PlaybackSelection resolved = PlaybackSelection.resolve(movie, selection, resumeHistory != null && !restoringSession);
+        if (resolved == null) {
             showError("没有可播放的线路");
             return;
         }
-        if (episodeIndex < 0 || episodeIndex >= currentSource.episodes.size()) {
-            episodeIndex = 0;
-        }
+        currentSource = resolved.source; lineId = currentSource.lineId;
+        episodeIndex = resolved.episodeIndex; resumePosition = resolved.position;
         currentEpisode = currentSource.episodes.get(episodeIndex);
         startPlayback();
-    }
-
-    private long currentEpisodeDurationFromHistory() {
-        WatchHistoryItem h = TvBoxApp.get().history().find(apiId, movieId);
-        return h != null ? h.duration : 0;
     }
 
     private PlaySource findSource(String id) {
@@ -416,27 +436,30 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             showError("播放地址无效");
             return;
         }
-        player = new SimpleExoPlayer.Builder(this, new DefaultRenderersFactory(this))
-                .setTrackSelector(new DefaultTrackSelector(this))
-                .build();
+        if (stopped) return;
+        mediaSources = new VodMediaSources(buildDataSourceFactory());
+        mediaHls = VodMediaSources.isHls(currentEpisode.url);
+        mediaFallbackUsed = false;
+        readyRecorded = false;
+        judger.reset();
+        player = createPlayer();
         player.addListener(this);
         playerView.setPlayer(player);
 
-        DataSource.Factory dsFactory = buildDataSourceFactory();
-        MediaSource mediaSource = buildMediaSource(currentEpisode.url, dsFactory);
+        MediaSource mediaSource = mediaSources.create(currentEpisode.url, mediaHls);
         player.setMediaSource(mediaSource, resumePosition > 0 ? resumePosition : 0);
         player.prepare();
         player.setPlayWhenReady(true);
         playing = true;
-        readyRecorded = false;
-        judger.reset();
+        applySpeed(speedIndex);
         requestAudioFocus();
         registerNoisy();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         buffering.setVisibility(View.VISIBLE);
+        int displayEpisode = usingLastUrl && resumeHistory != null ? resumeHistory.episodeIndex : episodeIndex;
         controller.setTitles(movie.name,
                 currentSource.sourceName + "·" + currentSource.lineName
-                        + " · 第" + (episodeIndex + 1) + "集 " + currentEpisode.title);
+                        + " · 第" + (displayEpisode + 1) + "集 " + currentEpisode.title);
         controller.setSpeedLabel(AppConstants.SPEED_SEQUENCE[speedIndex]);
         controller.show();
         controller.focusPlayToggle();
@@ -450,12 +473,15 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         return new DefaultDataSourceFactory(this, base);
     }
 
-    private static MediaSource buildMediaSource(String url, DataSource.Factory dsFactory) {
-        MediaItem item = MediaItem.fromUri(url);
-        if (url.toLowerCase(java.util.Locale.ROOT).contains(".m3u8")) {
-            return new HlsMediaSource.Factory(dsFactory).createMediaSource(item);
-        }
-        return new ProgressiveMediaSource.Factory(dsFactory).createMediaSource(item);
+    protected ExoPlayer createPlayer() {
+        return new SimpleExoPlayer.Builder(this, new DefaultRenderersFactory(this))
+                .setTrackSelector(new DefaultTrackSelector(this)).build();
+    }
+
+    private void pollBuffering() {
+        if (player == null || stopped || errorOverlay.getVisibility() == View.VISIBLE) return;
+        judger.onPaused(!player.getPlayWhenReady());
+        if (player.getPlaybackState() == Player.STATE_BUFFERING) onBufferingChanged(true);
     }
 
     // ===== 播放器事件 =====
@@ -467,28 +493,33 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         }
         switch (state) {
             case Player.STATE_READY:
+                Player active = player;
+                judger.onPaused(!player.getPlayWhenReady());
+                onBufferingChanged(false);
+                if (player != active) return;
                 buffering.setVisibility(View.GONE);
                 if (!readyRecorded) {
                     readyRecorded = true;
                     recordSuccessOnce();
                     scheduleHistorySave();
                     if (resumePosition > 0) {
-                        showHint("从上次进度 " + PlayerControllerView.formatTime(resumePosition) + " 继续");
+                        showHint(getString(R.string.player_resume_hint, PlayerControllerView.formatTime(resumePosition)));
                         resumePosition = 0;
                     }
                 }
                 break;
             case Player.STATE_BUFFERING:
                 buffering.setVisibility(View.VISIBLE);
+                judger.onPaused(!player.getPlayWhenReady());
                 onBufferingChanged(true);
                 break;
             case Player.STATE_IDLE:
                 buffering.setVisibility(View.GONE);
-                onBufferingChanged(false);
+                judger.reset();
                 break;
             case Player.STATE_ENDED:
                 buffering.setVisibility(View.GONE);
-                onBufferingChanged(false);
+                judger.reset();
                 onEpisodeEnded();
                 break;
             default:
@@ -499,11 +530,15 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     @Override
     public void onIsPlayingChanged(boolean isPlaying) {
         playing = isPlaying;
-        judger.onPaused(!isPlaying);
         controller.setPlaying(isPlaying);
         if (isPlaying) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         }
+    }
+
+    @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+        judger.onPaused(!playWhenReady);
+        if (!playWhenReady) saveHistory();
     }
 
     private void onBufferingChanged(boolean nowBuffering) {
@@ -518,7 +553,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         if (TvBoxApp.get().settings().autoLineSwitch()) {
             autoSwitchLine("当前线路卡顿（" + verdictName(verdict) + "），已自动换线");
         } else {
-            showHint("当前线路卡顿，可按换线按钮手动切换");
+            showHint(getString(R.string.player_slow_hint));
         }
     }
 
@@ -537,6 +572,17 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
 
     @Override
     public void onPlayerError(PlaybackException error) {
+        if (player == null || stopped) return;
+        if (!mediaFallbackUsed && mediaSources.shouldFallback(error, mediaHls)) {
+            mediaFallbackUsed = true;
+            mediaHls = !mediaHls;
+            long position = Math.max(0, Math.max(resumePosition, player.getCurrentPosition()));
+            judger.reset();
+            player.setMediaSource(mediaSources.create(currentEpisode.url, mediaHls), position);
+            player.prepare();
+            showHint(getString(R.string.media_type_retry));
+            return;
+        }
         buffering.setVisibility(View.GONE);
         recordFailForCurrentLine();
         if (TvBoxApp.get().settings().autoLineSwitch()) {
@@ -584,7 +630,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             }
         }
         if (movie.playSources.size() <= 1) {
-            showHint("暂无其他线路");
+            showHint(getString(R.string.player_no_other_line));
             return;
         }
         PlaySource next = movie.playSources.get((idx + 1) % movie.playSources.size());
@@ -592,12 +638,13 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     }
 
     private void switchToLine(PlaySource next, String message) {
+        if (next.episodes.isEmpty()) { showHint(getString(R.string.line_no_episodes)); return; }
         saveHistory();
         // 按集标题匹配新线路
         String title = currentEpisode != null ? currentEpisode.title : null;
         lineId = next.lineId;
         currentSource = next;
-        int newIndex = 0;
+        int newIndex = Math.max(0, Math.min(episodeIndex, next.episodes.size() - 1));
         if (title != null) {
             for (int i = 0; i < next.episodes.size(); i++) {
                 if (next.episodes.get(i).title.equals(title)) {
@@ -605,9 +652,6 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                     break;
                 }
             }
-        }
-        if (newIndex >= next.episodes.size()) {
-            newIndex = Math.min(episodeIndex, next.episodes.size() - 1);
         }
         episodeIndex = newIndex;
         currentEpisode = next.episodes.get(newIndex);
@@ -623,14 +667,14 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             return;
         }
         if (newIndex < 0) {
-            showHint("已经是第一集");
+            showHint(getString(R.string.player_first_episode));
             return;
         }
         if (newIndex >= currentSource.episodes.size()) {
-            showHint("已经是最后一集");
+            showHint(getString(R.string.player_last_episode));
             return;
         }
-        saveHistory();
+        if (player == null || player.getPlaybackState() != Player.STATE_ENDED) saveHistory();
         episodeIndex = newIndex;
         currentEpisode = currentSource.episodes.get(newIndex);
         resumePosition = 0;
@@ -645,7 +689,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             switchEpisode(episodeIndex + 1);
         } else {
             saveHistoryForEnded();
-            showHint("已播完最后一集");
+            showHint(getString(R.string.player_finished));
             controller.show();
         }
     }
@@ -672,7 +716,8 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                 player.getDuration() - 500));
         player.seekTo(target);
         judger.onSeekPerformed();
-        showHint((delta > 0 ? "快进 " : "快退 ") + AppConstants.SEEK_STEP_MS / 1000 + "秒");
+        showHint(getString(delta > 0 ? R.string.player_seek_forward : R.string.player_seek_backward,
+                AppConstants.SEEK_STEP_MS / 1000));
     }
 
     private void cycleSpeed() {
@@ -686,7 +731,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             player.setPlaybackParameters(new PlaybackParameters(speed));
         }
         controller.setSpeedLabel(speed);
-        showHint("倍速 " + speed + "x");
+        showHint(getString(R.string.player_speed, String.valueOf(speed)));
     }
 
     // ===== 遥控器按键 =====
@@ -773,14 +818,24 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     private void saveHistoryForEnded() {
         WatchHistoryItem item = buildHistoryItem();
         item.position = 0;
-        TvBoxApp.get().history().addOrUpdate(item);
+        persistHistory(item);
     }
 
     private void saveHistory() {
         if (movie == null || currentEpisode == null || player == null || !readyRecorded) {
             return;
         }
-        TvBoxApp.get().history().addOrUpdate(buildHistoryItem());
+        persistHistory(buildHistoryItem());
+    }
+
+    private void persistHistory(final WatchHistoryItem item) {
+        TvBoxApp.get().executors().disk().execute(new Runnable() {
+            public void run() {
+                if (!TvBoxApp.get().history().addOrUpdate(item)) {
+                    android.util.Log.w("TVBOX_HISTORY", "历史记录保存失败");
+                }
+            }
+        });
     }
 
     private WatchHistoryItem buildHistoryItem() {
@@ -800,9 +855,13 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         item.episodeUrl = currentEpisode != null ? currentEpisode.url : "";
         long pos = player != null ? player.getCurrentPosition() : resumePosition;
         long dur = player != null ? player.getDuration() : 0;
-        item.position = Math.max(0, pos);
+        item.position = player != null && player.getPlaybackState() == Player.STATE_ENDED ? 0 : Math.max(0, pos);
         item.duration = dur > 0 ? dur : 0;
         item.updatedAt = System.currentTimeMillis();
+        if (usingLastUrl && resumeHistory != null) {
+            item.episodeIndex = resumeHistory.episodeIndex;
+            item.lineIndex = resumeHistory.lineIndex;
+        }
         return item;
     }
 
@@ -907,12 +966,42 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
 
     // ===== 生命周期 =====
 
+    @Override public void finish() {
+        if (movie != null && currentEpisode != null) {
+            setResult(RESULT_OK, new Intent().putExtra(EXTRA_HISTORY_ITEM, buildHistoryItem()));
+        }
+        super.finish();
+    }
+
+    @Override protected void onSaveInstanceState(Bundle out) {
+        super.onSaveInstanceState(out);
+        if (movie != null && currentEpisode != null) out.putSerializable(EXTRA_HISTORY_ITEM, buildHistoryItem());
+    }
+
+    @Override protected void onStart() {
+        super.onStart();
+        stopped = false;
+        if (player != null) {
+            handler.removeMessages(MSG_UPDATE_TIME);
+            handler.sendEmptyMessage(MSG_UPDATE_TIME);
+        } else if (currentEpisode != null) {
+            startPlayback();
+            if (player != null) player.setPlayWhenReady(resumeWhenVisible);
+        }
+    }
+
     @Override
     protected void onStop() {
         saveHistory();
+        stopped = true;
+        handler.removeMessages(MSG_UPDATE_TIME);
+        handler.removeMessages(MSG_SAVE_HISTORY);
         if (player != null) {
-            player.setPlayWhenReady(false);
+            resumeWhenVisible = player.getPlayWhenReady();
+            resumePosition = Math.max(0, player.getCurrentPosition());
+            if (player.getPlaybackState() == Player.STATE_ENDED) resumePosition = 0;
         }
+        releasePlayer();
         super.onStop();
     }
 
@@ -938,5 +1027,6 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         unregisterNoisy();
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         handler.removeMessages(MSG_SAVE_HISTORY);
+        handler.removeMessages(MSG_UPDATE_TIME);
     }
 }

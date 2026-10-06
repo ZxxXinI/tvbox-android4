@@ -19,6 +19,7 @@ import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.common.Result;
 import com.tvbox.android44.common.StateLayout;
+import com.tvbox.android44.common.PageFocusState;
 import com.tvbox.android44.common.ui.ChipAdapter;
 import com.tvbox.android44.common.ui.GridSpacingDecoration;
 import com.tvbox.android44.common.ui.PosterEntry;
@@ -43,7 +44,7 @@ import java.util.List;
  * 「全部」= 当前来源第一页（不按分类过滤）；选择父分类后出现子分类行；
  * 滚动近底部分页追加；失败可重试。
  */
-public class HomeFragment extends Fragment {
+public class HomeFragment extends Fragment implements PageFocusState.Owner {
 
     private static final String ALL_ID = "all";
 
@@ -63,6 +64,9 @@ public class HomeFragment extends Fragment {
     private int pageCount = 1;
     private boolean loadingMore;
     private int requestId;
+    private int restorePage = 1;
+    private Bundle pendingFocus;
+    private String loadedApiId;
 
     private MovieRepository.Request movieRequest;
     private MovieRepository.Request categoryRequest;
@@ -71,6 +75,19 @@ public class HomeFragment extends Fragment {
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+        loadedApiId = TvBoxApp.get().settings().currentApi().id;
+        if (savedInstanceState != null && loadedApiId.equals(savedInstanceState.getString("api"))) {
+            selectedTab = savedInstanceState.getString("tab", ALL_ID);
+            selectedSub = savedInstanceState.getString("sub", ALL_ID);
+            restorePage = Math.max(1, Math.min(20, savedInstanceState.getInt("page", 1)));
+            pendingFocus = savedInstanceState.getBundle("focus");
+            String json = savedInstanceState.getString("categories");
+            if (json != null) {
+                try { categories = new ArrayList<Category>(java.util.Arrays.asList(
+                        new com.google.gson.Gson().fromJson(json, Category[].class))); }
+                catch (Exception ignored) { categories.clear(); }
+            }
+        }
         boolean cinema = SettingsRepository.THEME_CINEMA.equals(
                 TvBoxApp.get().settings().theme());
         View root = inflater.inflate(
@@ -137,7 +154,7 @@ public class HomeFragment extends Fragment {
                 new MovieRepository.Callback<List<Category>>() {
                     @Override
                     public void onResult(Result<List<Category>> result) {
-                        if (rid != requestId || !isAdded()) {
+                        if (rid != requestId || !isAdded() || getView() == null) {
                             return;
                         }
                         if (result.isSuccess() && result.data() != null) {
@@ -324,6 +341,7 @@ public class HomeFragment extends Fragment {
         final int rid = ++requestId;
         page = 1;
         pageCount = 1;
+        loadingMore = false;
         adapter.clear();
         updateHeroFromEntries();
         if (showLoading) {
@@ -333,20 +351,29 @@ public class HomeFragment extends Fragment {
         loadCategory(rid, currentTypeIds(), 1);
     }
 
-    private void loadCategory(final int rid, List<String> typeIds, int pageToLoad) {
+    private void loadCategory(final int rid, List<String> typeIds, final int pageToLoad) {
         ApiLine api = TvBoxApp.get().settings().currentApi();
         movieRequest = TvBoxApp.get().movies().fetchByCategories(api, typeIds, pageToLoad,
                 new MovieRepository.Callback<PagedMovies>() {
                     @Override
                     public void onResult(Result<PagedMovies> result) {
-                        if (rid != requestId || !isAdded()) {
+                        if (rid != requestId || !isAdded() || getView() == null) {
                             return;
                         }
                         if (result.isSuccess() && result.data() != null) {
                             PagedMovies data = result.data();
-                            showMovies(data.movies);
+                            page = pageToLoad;
                             pageCount = data.pageCount;
+                            showMovies(data.movies);
+                            if (page < restorePage && page < pageCount) {
+                                loadingMore = true;
+                                loadCategory(rid, currentTypeIds(), page + 1);
+                            } else {
+                                restorePage = 1;
+                                if (!isHidden() && PageFocusState.restore(getView(), pendingFocus)) pendingFocus = null;
+                            }
                         } else if (adapter.entries().isEmpty()) {
+                            loadingMore = false;
                             String msg = result.asFailure() != null
                                     ? result.asFailure().userMessage : "内容加载失败";
                             state.showError(msg + "。请检查网络或切换视频接口。",
@@ -356,6 +383,20 @@ public class HomeFragment extends Fragment {
                                             reload(true);
                                         }
                                     });
+                        } else {
+                            loadingMore = false;
+                            restorePage = 1;
+                            statusView.setText("下一页加载失败，点击重试");
+                            statusView.setVisibility(View.VISIBLE);
+                            statusView.setFocusable(true);
+                            statusView.setOnClickListener(new View.OnClickListener() {
+                                public void onClick(View view) {
+                                    if (!loadingMore) {
+                                        loadingMore = true;
+                                        loadCategory(requestId, currentTypeIds(), page + 1);
+                                    }
+                                }
+                            });
                         }
                     }
                 });
@@ -369,6 +410,7 @@ public class HomeFragment extends Fragment {
         }
         if (page > 1) {
             adapter.appendEntries(entries);
+            statusView.setVisibility(View.GONE);
         } else {
             adapter.setEntries(entries);
             statusView.setVisibility(View.GONE);
@@ -384,7 +426,8 @@ public class HomeFragment extends Fragment {
     }
 
     private void focusFirstPosterIfNeeded() {
-        if (grid.findFocus() == null && grid.getChildCount() > 0) {
+        if (!isHidden() && pendingFocus == null && getActivity().getCurrentFocus() == null
+                && grid.getChildCount() > 0) {
             grid.getChildAt(0).requestFocus();
         }
     }
@@ -401,8 +444,7 @@ public class HomeFragment extends Fragment {
         int total = adapter.getItemCount();
         if (total > 0 && lastVisible >= total - 6) {
             loadingMore = true;
-            page++;
-            loadCategory(requestId, currentTypeIds(), page);
+            loadCategory(requestId, currentTypeIds(), page + 1);
         }
     }
 
@@ -412,6 +454,8 @@ public class HomeFragment extends Fragment {
         if (chip.id.equals(selectedTab)) {
             return;
         }
+        restorePage = 1;
+        pendingFocus = null;
         selectedTab = chip.id;
         selectedSub = ALL_ID;
         tabsAdapter.setSelected(chip.id);
@@ -423,6 +467,8 @@ public class HomeFragment extends Fragment {
         if (chip.id.equals(selectedSub)) {
             return;
         }
+        restorePage = 1;
+        pendingFocus = null;
         selectedSub = chip.id;
         subTabsAdapter.setSelected(chip.id);
         reload(true);
@@ -444,9 +490,40 @@ public class HomeFragment extends Fragment {
         }
     }
 
+    @Override public void onSaveInstanceState(@NonNull Bundle out) {
+        super.onSaveInstanceState(out);
+        out.putString("api", loadedApiId);
+        out.putString("tab", selectedTab); out.putString("sub", selectedSub);
+        out.putInt("page", page);
+        out.putString("categories", new com.google.gson.Gson().toJson(categories));
+        Bundle focused = PageFocusState.capture(getView());
+        out.putBundle("focus", focused.isEmpty() ? pendingFocus : focused);
+    }
+
+    @Override public void restorePageFocus(Bundle focused) {
+        pendingFocus = focused;
+        if (!isHidden() && restorePage <= page && PageFocusState.restore(getView(), pendingFocus)) pendingFocus = null;
+    }
+
+    @Override public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (!hidden && getView() != null) {
+            String currentApi = TvBoxApp.get().settings().currentApi().id;
+            if (!currentApi.equals(loadedApiId)) {
+                loadedApiId = currentApi;
+                categories.clear(); selectedTab = ALL_ID; selectedSub = ALL_ID;
+                pendingFocus = null; restorePage = 1;
+                buildTabs(); reload(true);
+            } else restorePageFocus(pendingFocus);
+        }
+    }
+
     @Override
     public void onDestroyView() {
+        ++requestId;
         cancelRequests();
         super.onDestroyView();
+        grid = null;
+        state = null;
     }
 }

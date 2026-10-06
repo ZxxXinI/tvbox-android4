@@ -8,3 +8,5 @@ signing/
 *.jks
 *.keystore
 dist/*.apk
+__pycache__/
+dist/release-validation/

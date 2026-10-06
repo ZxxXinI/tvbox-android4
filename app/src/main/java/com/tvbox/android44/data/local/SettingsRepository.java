@@ -133,14 +133,11 @@ public class SettingsRepository {
         if (raw == null) {
             return "";
         }
-        String s = raw.trim();
-        if (!s.startsWith("http://") && !s.startsWith("https://")) {
-            return "";
-        }
-        if (!s.endsWith("/")) {
-            s = s + "/";
-        }
-        return s;
+        okhttp3.HttpUrl url = okhttp3.HttpUrl.parse(raw.trim());
+        if (url == null) return "";
+        String path = url.encodedPath();
+        if (!path.endsWith("/")) path += "/";
+        return url.newBuilder().encodedPath(path).fragment(null).build().toString();
     }
 
     /** URL 基本合法性（保存前校验用）。 */

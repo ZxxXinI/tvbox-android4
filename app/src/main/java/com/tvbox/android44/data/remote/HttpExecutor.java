@@ -61,7 +61,13 @@ public final class HttpExecutor {
         if (scope != null) {
             scope.register(call);
         }
-        Response response = call.execute();
+        Response response;
+        try {
+            response = call.execute();
+        } catch (IOException e) {
+            if (scope != null) scope.unregister(call);
+            throw e;
+        }
         if (!response.isSuccessful()) {
             response.close();
             if (scope != null) {
@@ -69,7 +75,25 @@ public final class HttpExecutor {
             }
             throw new IOException("HTTP " + response.code());
         }
-        return response;
+        if (scope == null) return response;
+        if (response.body() == null) {
+            scope.unregister(call);
+            return response;
+        }
+        final okhttp3.Call registeredCall = call;
+        final CancelScope registeredScope = scope;
+        final ResponseBody original = response.body();
+        final okio.BufferedSource source = okio.Okio.buffer(new okio.ForwardingSource(original.source()) {
+            @Override public void close() throws IOException {
+                try { super.close(); }
+                finally { registeredScope.unregister(registeredCall); }
+            }
+        });
+        return response.newBuilder().body(new ResponseBody() {
+            public okhttp3.MediaType contentType() { return original.contentType(); }
+            public long contentLength() { return original.contentLength(); }
+            public okio.BufferedSource source() { return source; }
+        }).build();
     }
 
     public static String sha256Hex(byte[] data) {

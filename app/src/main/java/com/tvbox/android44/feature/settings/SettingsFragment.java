@@ -75,18 +75,20 @@ public class SettingsFragment extends Fragment {
     private TextView btnPlatform;
 
     private ConfigHttpServer configServer;
-    private ConfigHttpServer.Mode qrMode;
     private AlertDialog qrDialog;
     private View qrReturnTo;
     private UpdateRepository.CheckHandle updateHandle;
     private MovieRepository.Request testRequest;
     private File downloadedApk;
     private boolean downloading;
+    private AppUpdate pendingStartupUpdate;
+    private int viewGeneration;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+        final int generation = ++viewGeneration;
         View root = inflater.inflate(R.layout.fragment_settings, container, false);
         btnTheme = root.findViewById(R.id.settings_theme);
         btnFont = root.findViewById(R.id.settings_font);
@@ -186,9 +188,12 @@ public class SettingsFragment extends Fragment {
                         new TvDialogs.ConfirmListener() {
                             @Override
                             public void onConfirm() {
-                                TvBoxApp.get().health().clearAll();
-                                Toast.makeText(getActivity(), "线路统计已清空",
-                                        Toast.LENGTH_SHORT).show();
+                                TvBoxApp.get().health().clearAll(new com.tvbox.android44.data.local.HealthStore.Callback() {
+                                    @Override public void onComplete(boolean success) {
+                                        if (isAdded() && getView() != null && !isHidden() && generation == viewGeneration) toast(getString(success
+                                                ? R.string.health_cleared : R.string.health_clear_failed));
+                                    }
+                                });
                             }
                         });
             }
@@ -246,10 +251,9 @@ public class SettingsFragment extends Fragment {
             }
         });
 
-        versionView.setText("当前版本：v" + BuildConfig.VERSION_NAME
-                + "（内部版本 " + BuildConfig.VERSION_CODE + "）");
+        versionView.setText(getString(R.string.current_version, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE));
         if (downloadedApk != null) {
-            btnUpdateAction.setText("安装更新");
+            btnUpdateAction.setText(R.string.install_update);
         }
         refresh();
 
@@ -271,21 +275,21 @@ public class SettingsFragment extends Fragment {
 
     private void refresh() {
         SettingsRepository s = TvBoxApp.get().settings();
-        btnTheme.setText("主题："
-                + (SettingsRepository.THEME_CINEMA.equals(s.theme()) ? "影院" : "默认"));
+        btnTheme.setText(getString(R.string.theme_label, getString(SettingsRepository.THEME_CINEMA.equals(s.theme())
+                ? R.string.theme_cinema : R.string.theme_default)));
         String font = s.fontScale();
-        btnFont.setText("字体：" + (SettingsRepository.FONT_LARGE.equals(font) ? "大"
-                : (SettingsRepository.FONT_XLARGE.equals(font) ? "超大" : "正常")));
-        btnApi.setText("当前视频源：" + s.currentApi().name);
+        btnFont.setText(getString(R.string.font_label, getString(SettingsRepository.FONT_LARGE.equals(font) ? R.string.font_large
+                : (SettingsRepository.FONT_XLARGE.equals(font) ? R.string.font_xlarge : R.string.font_normal))));
+        btnApi.setText(getString(R.string.current_source_label, s.currentApi().name));
         AiProvider provider = s.aiProvider();
-        btnAiProvider.setText("AI 提供方：" + (provider == null ? "未选择" : provider.name));
+        btnAiProvider.setText(getString(R.string.ai_provider_label, provider == null ? getString(R.string.not_selected) : provider.name));
         String model = s.aiModel();
-        btnAiModel.setText("模型：" + (model.isEmpty() ? "未配置" : model));
-        btnAiKey.setText("API Key：" + SettingsRepository.maskKey(s.aiApiKey()));
-        btnAutoLine.setText("自动换线：" + (s.autoLineSwitch() ? "开" : "关"));
-        btnCheckToggle.setText("启动时检查更新：" + (s.checkUpdateOnStart() ? "开" : "关"));
-        btnIptv.setText("IPTV 地址：" + s.iptvUrl());
-        btnPlatform.setText("平台直播服务：" + s.platformLiveUrl());
+        btnAiModel.setText(getString(R.string.model_label, model.isEmpty() ? getString(R.string.not_configured) : model));
+        btnAiKey.setText(getString(R.string.api_key_label, SettingsRepository.maskKey(s.aiApiKey())));
+        btnAutoLine.setText(getString(R.string.auto_line_label, getString(s.autoLineSwitch() ? R.string.enabled : R.string.disabled)));
+        btnCheckToggle.setText(getString(R.string.startup_update_label, getString(s.checkUpdateOnStart() ? R.string.enabled : R.string.disabled)));
+        btnIptv.setText(getString(R.string.iptv_url_label, s.iptvUrl()));
+        btnPlatform.setText(getString(R.string.platform_url_label, s.platformLiveUrl()));
     }
 
     // ===== 外观 =====
@@ -388,7 +392,7 @@ public class SettingsFragment extends Fragment {
                 new MovieRepository.Callback<com.tvbox.android44.domain.model.PagedMovies>() {
                     @Override
                     public void onResult(Result<com.tvbox.android44.domain.model.PagedMovies> result) {
-                        if (!isAdded()) {
+                        if (!isAdded() || getView() == null) {
                             return;
                         }
                         if (result.isSuccess() && result.data() != null) {
@@ -516,7 +520,15 @@ public class SettingsFragment extends Fragment {
     // ===== 播放管家 =====
 
     private void showStats() {
-        List<LineHealth> stats = TvBoxApp.get().health().statsSnapshot();
+        final int generation = viewGeneration;
+        TvBoxApp.get().health().readStats(new com.tvbox.android44.data.local.HealthStore.StatsCallback() {
+            @Override public void onStats(List<LineHealth> stats) {
+                if (isAdded() && getView() != null && !isHidden() && generation == viewGeneration) renderStats(stats);
+            }
+        });
+    }
+
+    private void renderStats(List<LineHealth> stats) {
         StringBuilder sb = new StringBuilder();
         if (stats.isEmpty()) {
             sb.append("暂无线路统计，播放后自动积累。");
@@ -553,6 +565,19 @@ public class SettingsFragment extends Fragment {
 
     // ===== OTA =====
 
+    public void offerStartupUpdate(AppUpdate update) {
+        pendingStartupUpdate = update;
+        if (isAdded() && getView() != null && !isHidden()) {
+            pendingStartupUpdate = null;
+            confirmUpdate(update);
+        }
+    }
+
+    @Override public void onViewCreated(@NonNull View view, @Nullable Bundle state) {
+        super.onViewCreated(view, state);
+        if (pendingStartupUpdate != null) offerStartupUpdate(pendingStartupUpdate);
+    }
+
     private void onUpdateActionClicked() {
         if (downloading) {
             toast("正在下载中，请稍候");
@@ -566,21 +591,22 @@ public class SettingsFragment extends Fragment {
     }
 
     private void checkUpdate() {
+        if (updateHandle != null) updateHandle.cancel();
         setOtaStatus("正在检查更新…", true);
-        btnUpdateAction.setText("检查中…");
+        btnUpdateAction.setText(R.string.checking_update);
         updateHandle = TvBoxApp.get().updates().check(new UpdateRepository.CheckCallback() {
             @Override
             public void onResult(Result<AppUpdate> result) {
-                if (!isAdded()) {
+                if (!isAdded() || getView() == null) {
                     return;
                 }
                 if (result.isSuccess() && result.data() != null) {
                     setOtaStatus(null, false);
-                    btnUpdateAction.setText("检查更新");
+                    btnUpdateAction.setText(R.string.check_update);
                     confirmUpdate(result.data());
                     return;
                 }
-                btnUpdateAction.setText("检查更新");
+                btnUpdateAction.setText(R.string.check_update);
                 String message = result.asFailure() != null
                         ? result.asFailure().userMessage : "检查失败";
                 // 手动检查失败显示明确错误（含“已是最新版本”提示），无需常驻状态行
@@ -616,7 +642,7 @@ public class SettingsFragment extends Fragment {
 
     private void downloadUpdate(final AppUpdate update) {
         downloading = true;
-        btnUpdateAction.setText("下载中…");
+        btnUpdateAction.setText(R.string.downloading_update);
         otaProgress.setIndeterminate(update.apkSize <= 0);
         otaProgress.setProgress(0);
         otaProgress.setVisibility(View.VISIBLE);
@@ -625,11 +651,11 @@ public class SettingsFragment extends Fragment {
                 new UpdateRepository.DownloadCallback() {
                     @Override
                     public void onProgress(long downloaded, long total) {
-                        if (!isAdded()) {
+                        if (!isAdded() || getView() == null) {
                             return;
                         }
                         if (total > 0) {
-                            int percent = (int) (downloaded * 100 / total);
+                            int percent = (int) Math.min(100, 100.0 * ((double) downloaded / total));
                             otaProgress.setIndeterminate(false);
                             otaProgress.setProgress(percent);
                             setOtaStatus("下载中 " + percent + "%（"
@@ -643,19 +669,19 @@ public class SettingsFragment extends Fragment {
 
                     @Override
                     public void onDone(Result<File> result) {
-                        if (!isAdded()) {
+                        if (!isAdded() || getView() == null) {
                             return;
                         }
                         downloading = false;
                         otaProgress.setVisibility(View.GONE);
                         if (result.isSuccess() && result.data() != null) {
                             downloadedApk = result.data();
-                            btnUpdateAction.setText("安装更新");
+                            btnUpdateAction.setText(R.string.install_update);
                             setOtaStatus("下载完成，校验通过，等待安装", false);
                             installApk();
                             return;
                         }
-                        btnUpdateAction.setText("检查更新");
+                        btnUpdateAction.setText(R.string.check_update);
                         if (result.isCancelled()) {
                             setOtaStatus(null, false);
                         } else {
@@ -670,7 +696,7 @@ public class SettingsFragment extends Fragment {
     private void installApk() {
         if (downloadedApk == null || !downloadedApk.exists()) {
             downloadedApk = null;
-            btnUpdateAction.setText("检查更新");
+            btnUpdateAction.setText(R.string.check_update);
             toast("安装包不存在，请重新检查更新");
             return;
         }
@@ -699,6 +725,8 @@ public class SettingsFragment extends Fragment {
             startActivity(updates.buildInstallIntent(downloadedApk));
         } catch (ActivityNotFoundException e) {
             toast("系统没有可用的安装器");
+        } catch (SecurityException e) {
+            toast("系统拒绝安装，请检查安装权限");
         }
     }
 
@@ -737,7 +765,7 @@ public class SettingsFragment extends Fragment {
         TvBoxApp.get().live().load(true, new com.tvbox.android44.data.repository.LiveRepository.Callback() {
             @Override
             public void onResult(Result<List<com.tvbox.android44.domain.model.LiveChannelGroup>> result) {
-                if (!isAdded()) {
+                if (!isAdded() || getView() == null) {
                     return;
                 }
                 if (result.isSuccess() && result.data() != null) {
@@ -761,7 +789,7 @@ public class SettingsFragment extends Fragment {
                 new com.tvbox.android44.data.repository.PlatformLiveRepository.Callback<List<com.tvbox.android44.domain.model.PlatformLive.Site>>() {
                     @Override
                     public void onResult(Result<List<com.tvbox.android44.domain.model.PlatformLive.Site>> result) {
-                        if (!isAdded()) {
+                        if (!isAdded() || getView() == null) {
                             return;
                         }
                         if (result.isSuccess() && result.data() != null) {
@@ -776,86 +804,79 @@ public class SettingsFragment extends Fragment {
 
     // ===== 扫码配置（文档 09 §5） =====
 
-    private void showQrDialog(ConfigHttpServer.Mode mode, View returnTo) {
+    private void showQrDialog(final ConfigHttpServer.Mode mode, final View returnTo) {
+        stopConfigServer();
+        final List<String> ips = localIpv4s();
+        if (ips.isEmpty()) { toast(getString(R.string.qr_no_lan)); return; }
+        if (ips.size() == 1) showQrAtAddress(mode, returnTo, ips.get(0));
+        else TvDialogs.singleChoice(getActivity(), getString(R.string.qr_choose_network), ips, 0,
+                new TvDialogs.ChoiceListener() {
+                    @Override public void onChoice(int index) { showQrAtAddress(mode, returnTo, ips.get(index)); }
+                });
+    }
+
+    private void showQrAtAddress(final ConfigHttpServer.Mode mode, View returnTo, String ip) {
+        if (!isAdded() || getView() == null || isHidden()) return;
         stopConfigServer();
         qrReturnTo = returnTo;
-        qrMode = mode;
-        configServer = new ConfigHttpServer(mode, new ConfigHttpServer.SubmitListener() {
-            @Override
-            public boolean onSubmit(java.util.Map<String, String> fields) {
-                return onConfigSubmitted(fields);
-            }
-        });
+        try {
+            configServer = new ConfigHttpServer(mode, InetAddress.getByName(ip),
+                    new ConfigHttpServer.SubmitListener() {
+                        @Override public boolean onSubmit(ConfigHttpServer session, java.util.Map<String, String> fields) {
+                            return onConfigSubmitted(session, fields);
+                        }
+                    }, new ConfigHttpServer.CloseListener() {
+                        @Override public void onClosed(ConfigHttpServer session, ConfigHttpServer.CloseReason reason) {
+                            if (configServer != session) return;
+                            if (qrDialog != null && qrDialog.isShowing()) qrDialog.dismiss();
+                            stopConfigServer();
+                            if (isAdded() && getView() != null && !isHidden()) {
+                                if (reason == ConfigHttpServer.CloseReason.EXPIRED) toast(getString(R.string.qr_expired));
+                                else if (reason == ConfigHttpServer.CloseReason.FAILURES) toast(getString(R.string.qr_failures));
+                            }
+                        }
+                    });
+        } catch (java.net.UnknownHostException | IllegalArgumentException error) {
+            toast(getString(R.string.qr_no_lan));
+            return;
+        }
         if (!configServer.start()) {
-            toast("配置服务启动失败：端口被占用");
+            toast(getString(R.string.qr_start_failed));
             configServer = null;
             return;
         }
-        List<String> ips = localIpv4s();
-        String url = ips.isEmpty() ? ""
-                : "http://" + ips.get(0) + ":" + configServer.port() + "/" + configServer.token();
-
-        View view = LayoutInflater.from(getActivity())
-                .inflate(R.layout.dialog_qr_config, null);
+        String url = "http://" + ip + ":" + configServer.port() + "/" + configServer.token();
+        View view = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_qr_config, null);
         TextView urlView = view.findViewById(R.id.qr_url);
         TextView hintView = view.findViewById(R.id.qr_hint);
         ImageView image = view.findViewById(R.id.qr_image);
-        if (url.isEmpty()) {
-            urlView.setText("未找到局域网 IP 地址");
-            image.setVisibility(View.GONE);
-            hintView.setText("请确认电视已连接 Wi-Fi 或有线网络，然后关闭本窗口重试。");
-        } else {
-            urlView.setText(url);
-            Bitmap qr = QrCode.encode(url, 480);
-            if (qr != null) {
-                image.setImageBitmap(qr);
-            } else {
-                image.setVisibility(View.GONE);
-                hintView.setText("二维码生成失败，可在手机浏览器手动输入上方地址。");
-            }
-            String hint = "手机与电视需在同一局域网：扫码打开页面，填写并提交后自动保存、会话自动关闭。"
-                    + "本会话约 5 分钟内有效，过期请关闭后重新生成。";
-            if (ips.size() > 1) {
-                StringBuilder extra = new StringBuilder(hint).append("\n其他候选地址：");
-                for (int i = 1; i < ips.size(); i++) {
-                    extra.append("\nhttp://").append(ips.get(i))
-                            .append(":").append(configServer.port())
-                            .append("/").append(configServer.token());
-                }
-                hint = extra.toString();
-            }
-            hintView.setText(hint);
-        }
-
+        urlView.setText(url);
+        Bitmap qr = QrCode.encode(url, 480);
+        if (qr != null) image.setImageBitmap(qr);
+        else image.setVisibility(View.GONE);
+        hintView.setText(getString(qr == null ? R.string.qr_manual_hint : R.string.qr_session_hint));
         qrDialog = new AlertDialog.Builder(getActivity(), R.style.TvDialog)
-                .setTitle(mode == ConfigHttpServer.Mode.AI ? "扫码配置 AI" : "扫码添加视频接口")
-                .setView(view)
-                .setCancelable(true)
-                .create();
+                .setTitle(mode == ConfigHttpServer.Mode.AI ? R.string.qr_ai_title : R.string.qr_api_title)
+                .setView(view).setCancelable(true).create();
         qrDialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
-            @Override
-            public void onDismiss(android.content.DialogInterface dialog) {
+            @Override public void onDismiss(android.content.DialogInterface dialog) {
                 stopConfigServer();
-                // 弹窗关闭后焦点回入口按钮（文档 09 §9）
-                if (qrReturnTo != null) {
-                    qrReturnTo.requestFocus();
-                }
+                if (qrReturnTo != null && qrReturnTo.isAttachedToWindow()) qrReturnTo.requestFocus();
+                qrReturnTo = null;
             }
         });
         view.findViewById(R.id.qr_close).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                qrDialog.dismiss();
-            }
+            @Override public void onClick(View view) { qrDialog.dismiss(); }
         });
         qrDialog.show();
     }
 
     /** 手机端提交回调（主线程）：保存后关会话；返回 false 会向手机端提示保存失败。 */
-    private boolean onConfigSubmitted(java.util.Map<String, String> fields) {
+    private boolean onConfigSubmitted(ConfigHttpServer session, java.util.Map<String, String> fields) {
+        if (configServer != session || !session.isRunning() || !isAdded() || getView() == null || isHidden()) return false;
         SettingsRepository s = TvBoxApp.get().settings();
         boolean saved;
-        if (qrMode == ConfigHttpServer.Mode.AI) {
+        if (session.mode() == ConfigHttpServer.Mode.AI) {
             s.setAiProvider(orEmpty(fields.get("provider")));
             s.setAiModel(orEmpty(fields.get("model")));
             s.setAiApiKey(orEmpty(fields.get("apiKey")));
@@ -872,9 +893,7 @@ public class SettingsFragment extends Fragment {
         if (saved) {
             refresh();
             toast("配置已保存");
-            if (qrDialog != null && qrDialog.isShowing()) {
-                qrDialog.dismiss();
-            }
+            // The server responds to the phone before its close callback dismisses the dialog.
         }
         return saved;
     }
@@ -898,7 +917,7 @@ public class SettingsFragment extends Fragment {
                 }
                 for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
                     InetAddress addr = ia.getAddress();
-                    if (addr instanceof Inet4Address && !addr.isLoopbackAddress()
+                    if (addr instanceof Inet4Address && addr.isSiteLocalAddress() && !addr.isLoopbackAddress()
                             && !addr.isLinkLocalAddress()) {
                         ips.add(addr.getHostAddress());
                     }
@@ -985,17 +1004,40 @@ public class SettingsFragment extends Fragment {
         if (qrDialog != null && qrDialog.isShowing()) {
             qrDialog.dismiss();
         }
+        cancelUpdateWork();
         super.onStop();
+    }
+
+    @Override public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (hidden) {
+            stopConfigServer();
+            if (qrDialog != null && qrDialog.isShowing()) qrDialog.dismiss();
+            cancelUpdateWork();
+        } else if (pendingStartupUpdate != null) offerStartupUpdate(pendingStartupUpdate);
+    }
+
+    private void cancelUpdateWork() {
+        if (updateHandle != null) updateHandle.cancel();
+        updateHandle = null;
+        downloading = false;
+        if (getView() != null) {
+            otaProgress.setVisibility(View.GONE);
+            setOtaStatus(null, false);
+            btnUpdateAction.setText(downloadedApk == null ? R.string.check_update : R.string.install_update);
+        }
     }
 
     @Override
     public void onDestroyView() {
+        ++viewGeneration;
         if (updateHandle != null) {
             updateHandle.cancel();
         }
         if (testRequest != null) {
             testRequest.cancel();
         }
+        downloading = false;
         super.onDestroyView();
     }
 }

@@ -55,9 +55,12 @@ public enum ErrorKind {
     /** 把 IO 异常映射为错误类别；不吞掉根因，但用户只看分类提示。 */
     public static ErrorKind fromException(Throwable t) {
         if (t instanceof java.net.SocketTimeoutException) return TIMEOUT;
+        // OkHttp's overall call deadline reports InterruptedIOException("timeout").
+        if (t instanceof java.io.InterruptedIOException && "timeout".equals(t.getMessage())) return TIMEOUT;
         if (t instanceof UnknownHostException) return DNS;
         if (t instanceof SSLException) return TLS;
         if (t instanceof ConnectException) return HTTP;
+        if (t instanceof IOException && t.getMessage() != null && t.getMessage().startsWith("HTTP ")) return HTTP;
         if (t instanceof IOException) return OTHER;
         return OTHER;
     }

@@ -36,9 +36,10 @@ public class CancelScope {
     }
 
     public void cancel() {
-        cancelled = true;
         List<Call> toCancel;
         synchronized (this) {
+            if (cancelled) return;
+            cancelled = true;
             toCancel = new ArrayList<Call>(calls);
             calls.clear();
         }

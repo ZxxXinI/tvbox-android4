@@ -18,9 +18,16 @@ public class LineHealth {
         this.key = key;
     }
 
+    public LineHealth(LineHealth other) {
+        key = other.key;
+        lastSuccessAt = other.lastSuccessAt; lastFailAt = other.lastFailAt;
+        lastSlowAt = other.lastSlowAt; cooldownUntil = other.cooldownUntil;
+        successCount = other.successCount; failCount = other.failCount; slowCount = other.slowCount;
+    }
+
     /** 长期成功率（0~1，无记录时 -1）。 */
     public double successRate() {
-        int total = successCount + failCount;
+        long total = (long) successCount + failCount;
         if (total <= 0) {
             return -1;
         }

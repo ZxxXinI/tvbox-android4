@@ -21,6 +21,7 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.DiffUtil;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -28,6 +29,7 @@ import com.tvbox.android44.R;
 import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.common.FocusScaler;
+import com.tvbox.android44.common.PageFocusState;
 import com.tvbox.android44.common.Result;
 import com.tvbox.android44.common.StateLayout;
 import com.tvbox.android44.common.ui.ChipAdapter;
@@ -36,6 +38,7 @@ import com.tvbox.android44.domain.model.AiRecommendItem;
 import com.tvbox.android44.feature.main.MainActivity;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 
 /**
@@ -69,11 +72,14 @@ public class RecommendFragment extends Fragment {
     private boolean busy;
     private int chipOffset;
     private String lastQuery = "";
+    private int requestGeneration;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+        ++requestGeneration;
+        busy = false;
         View root = inflater.inflate(R.layout.fragment_recommend, container, false);
         input = root.findViewById(R.id.recommend_input);
         voiceButton = root.findViewById(R.id.recommend_voice);
@@ -149,7 +155,7 @@ public class RecommendFragment extends Fragment {
         }
 
         if (adapter.getItemCount() == 0) {
-            state.showEmpty("输入需求或选择快捷词，按「推荐」获取 AI 影视推荐");
+            state.showEmpty(getString(R.string.recommend_empty));
         }
         return root;
     }
@@ -190,25 +196,26 @@ public class RecommendFragment extends Fragment {
             startActivityForResult(intent, REQUEST_VOICE);
         } catch (Exception e) {
             // 识别服务异常时回退为文字输入，不崩溃
-            Toast.makeText(getActivity(), "语音识别不可用，请使用文字输入", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getActivity(), R.string.voice_unavailable, Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
                                            @NonNull int[] grantResults) {
+        if (!isAdded() || getView() == null || isHidden()) return;
         if (requestCode == REQUEST_MIC
                 && grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
             startVoice();
         } else if (requestCode == REQUEST_MIC) {
-            Toast.makeText(getActivity(), "未授予麦克风权限，语音不可用，请使用文字输入",
+            Toast.makeText(getActivity(), R.string.voice_permission_denied,
                     Toast.LENGTH_SHORT).show();
         }
     }
 
     @Override
     public void onActivityResult(int requestCode, int resultCode, @Nullable Intent data) {
-        if (requestCode != REQUEST_VOICE) {
+        if (requestCode != REQUEST_VOICE || !isAdded() || getView() == null || isHidden()) {
             return;
         }
         if (resultCode == Activity.RESULT_OK && data != null) {
@@ -221,7 +228,7 @@ public class RecommendFragment extends Fragment {
                 return;
             }
         }
-        Toast.makeText(getActivity(), "未识别到语音内容，请使用文字输入", Toast.LENGTH_SHORT).show();
+        Toast.makeText(getActivity(), R.string.voice_empty, Toast.LENGTH_SHORT).show();
     }
 
     // ===== 请求 =====
@@ -229,33 +236,34 @@ public class RecommendFragment extends Fragment {
     private void ask(String rawQuery) {
         String query = rawQuery == null ? "" : rawQuery.trim();
         if (query.isEmpty()) {
-            Toast.makeText(getActivity(), "请先输入推荐需求", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        if (busy) {
-            Toast.makeText(getActivity(), "正在请求中，请稍候", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getActivity(), R.string.recommend_need_query, Toast.LENGTH_SHORT).show();
             return;
         }
         if (query.length() > AppConstants.SEARCH_QUERY_MAX_LENGTH) {
             query = query.substring(0, AppConstants.SEARCH_QUERY_MAX_LENGTH);
         }
+        if (busy && query.equals(lastQuery)) {
+            Toast.makeText(getActivity(), R.string.recommend_busy, Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (handle != null) {
             handle.cancel();
         }
         final String q = query;
+        final int generation = ++requestGeneration;
         lastQuery = q;
         busy = true;
         hideKeyboard();
         if (adapter.getItemCount() == 0) {
-            state.showLoading("AI 正在思考…");
+            state.showLoading(getString(R.string.recommend_loading));
         } else {
-            setStatus("正在按「" + q + "」重新推荐…");
+            setStatus(getString(R.string.recommend_refreshing, q));
         }
 
         handle = TvBoxApp.get().recommend().ask(q, new RecommendRepository.Callback() {
             @Override
             public void onResult(Result<List<AiRecommendItem>> result) {
-                if (!isAdded()) {
+                if (!isAdded() || getView() == null || generation != requestGeneration) {
                     return;
                 }
                 busy = false;
@@ -265,27 +273,27 @@ public class RecommendFragment extends Fragment {
                 if (result.isSuccess() && result.data() != null && !result.data().isEmpty()) {
                     adapter.setItems(result.data());
                     state.showContent();
-                    setStatus("按「" + q + "」推荐了 " + result.data().size()
-                            + " 部作品，按确认键搜索片源");
-                    if (listView.findFocus() == null && listView.getChildCount() > 0) {
-                        listView.getChildAt(0).requestFocus();
-                    }
+                    setStatus(getString(R.string.recommend_count, q, adapter.getItemCount()));
                     return;
                 }
                 String message = result.asFailure() != null
-                        ? result.asFailure().userMessage : "AI 未返回内容，请重试";
+                        ? result.asFailure().userMessage : getString(R.string.recommend_no_content);
                 if (result.asFailure() != null && result.asFailure().kind == com.tvbox.android44.common.ErrorKind.PERMISSION) {
-                    // Key 未配置：清空旧结果，引导去设置（此后无法使用推荐）
-                    adapter.setItems(new ArrayList<AiRecommendItem>());
-                    state.showEmpty(message + "。可在「设置 → AI 推荐」中扫码配置。");
-                    setStatus(null);
+                    String guidance = getString(R.string.recommend_setup_hint, message);
+                    if (adapter.getItemCount() > 0) {
+                        state.showContent();
+                        setStatus(getString(R.string.recommend_failed_previous, guidance));
+                    } else {
+                        state.showEmpty(guidance);
+                        setStatus(null);
+                    }
                     return;
                 }
                 if (adapter.getItemCount() > 0) {
                     // 非阻断错误：保留上一批结果
-                    setStatus("本次推荐失败：" + message + "（当前展示上一批结果）");
+                    setStatus(getString(R.string.recommend_failed_previous, message));
                 } else {
-                    state.showError(message + "，请重试。", new StateLayout.OnRetryListener() {
+                    state.showError(getString(R.string.error_retry, message), new StateLayout.OnRetryListener() {
                         @Override
                         public void onRetry() {
                             ask(q);
@@ -320,10 +328,25 @@ public class RecommendFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        ++requestGeneration;
+        busy = false;
         if (handle != null) {
             handle.cancel();
         }
         super.onDestroyView();
+    }
+
+    @Override public void onHiddenChanged(boolean hidden) {
+        super.onHiddenChanged(hidden);
+        if (hidden && busy) {
+            ++requestGeneration;
+            if (handle != null) handle.cancel();
+            busy = false;
+            if (getView() != null) {
+                if (adapter.getItemCount() == 0) state.showEmpty(getString(R.string.recommend_cancelled));
+                else setStatus(getString(R.string.recommend_cancelled));
+            }
+        }
     }
 
     // ===== 结果列表 =====
@@ -337,14 +360,36 @@ public class RecommendFragment extends Fragment {
         private final List<AiRecommendItem> items = new ArrayList<AiRecommendItem>();
         private OnItemClick listener;
 
+        RecommendAdapter() {
+            setHasStableIds(true);
+            setStateRestorationPolicy(StateRestorationPolicy.PREVENT_WHEN_EMPTY);
+        }
+
         void setListener(OnItemClick listener) {
             this.listener = listener;
         }
 
         void setItems(List<AiRecommendItem> list) {
+            final List<AiRecommendItem> old = new ArrayList<AiRecommendItem>(items);
+            LinkedHashMap<String, AiRecommendItem> unique = new LinkedHashMap<String, AiRecommendItem>();
+            for (AiRecommendItem item : list) {
+                if (!unique.containsKey(key(item))) unique.put(key(item), item);
+            }
+            final List<AiRecommendItem> next = new ArrayList<AiRecommendItem>(unique.values());
+            DiffUtil.DiffResult diff = DiffUtil.calculateDiff(new DiffUtil.Callback() {
+                @Override public int getOldListSize() { return old.size(); }
+                @Override public int getNewListSize() { return next.size(); }
+                @Override public boolean areItemsTheSame(int before, int after) {
+                    return key(old.get(before)).equals(key(next.get(after)));
+                }
+                @Override public boolean areContentsTheSame(int before, int after) {
+                    String a = old.get(before).reason, b = next.get(after).reason;
+                    return a == null ? b == null : a.equals(b);
+                }
+            });
             items.clear();
-            items.addAll(list);
-            notifyDataSetChanged();
+            items.addAll(next);
+            diff.dispatchUpdatesTo(this);
         }
 
         @NonNull
@@ -361,13 +406,14 @@ public class RecommendFragment extends Fragment {
             final AiRecommendItem item = items.get(position);
             holder.title.setText(item.title);
             holder.reason.setText(item.reason == null || item.reason.isEmpty()
-                    ? "—" : item.reason);
-            holder.hint.setText("搜索《" + item.searchKeyword + "》");
+                    ? holder.itemView.getContext().getString(R.string.no_description) : item.reason);
+            holder.hint.setText(holder.itemView.getContext().getString(R.string.search_title_hint, item.searchKeyword));
             holder.itemView.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
                     if (listener != null) {
-                        listener.onItemClick(item);
+                        int current = holder.getBindingAdapterPosition();
+                        if (current != RecyclerView.NO_POSITION) listener.onItemClick(items.get(current));
                     }
                 }
             });
@@ -376,6 +422,14 @@ public class RecommendFragment extends Fragment {
         @Override
         public int getItemCount() {
             return items.size();
+        }
+
+        @Override public long getItemId(int position) {
+            return PageFocusState.stableId(key(items.get(position)));
+        }
+
+        private static String key(AiRecommendItem item) {
+            return item.title + "\u001f" + item.searchKeyword;
         }
 
         static final class Holder extends RecyclerView.ViewHolder {

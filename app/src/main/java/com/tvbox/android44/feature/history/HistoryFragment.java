@@ -19,6 +19,7 @@ import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.common.FocusScaler;
 import com.tvbox.android44.common.StateLayout;
+import com.tvbox.android44.common.PageFocusState;
 import com.tvbox.android44.common.TvDialogs;
 import com.tvbox.android44.common.ui.GridSpacingDecoration;
 import com.tvbox.android44.data.local.HistoryStore;
@@ -34,16 +35,20 @@ import java.util.List;
  * 点击进入详情（详情内完成“重新取详情→线路/集匹配→播放”的恢复链路）；
  * 清空有二次确认，完成后焦点回空态返回。
  */
-public class HistoryFragment extends Fragment implements HistoryStore.Listener {
+public class HistoryFragment extends Fragment implements HistoryStore.Listener, PageFocusState.Owner {
 
     private StateLayout state;
     private RecyclerView grid;
     private HistoryAdapter adapter;
+    private int viewGeneration;
+    private Bundle pendingFocus;
 
     @Nullable
     @Override
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
+        ++viewGeneration;
+        if (savedInstanceState != null) pendingFocus = savedInstanceState.getBundle("focus");
         View root = inflater.inflate(R.layout.fragment_history, container, false);
         state = root.findViewById(R.id.history_state);
         grid = root.findViewById(R.id.history_grid);
@@ -55,7 +60,7 @@ public class HistoryFragment extends Fragment implements HistoryStore.Listener {
             @Override
             public void onHistoryClick(WatchHistoryItem item) {
                 // 恢复链路：详情页重新取详情并按线路名+集标题定位；失败时用历史 URL 短期回退
-                DetailActivity.startForResult(getActivity(), item.apiLineId, item.movieId);
+                DetailActivity.startForHistory(getActivity(), item);
             }
         });
         grid.setAdapter(adapter);
@@ -68,53 +73,89 @@ public class HistoryFragment extends Fragment implements HistoryStore.Listener {
                         new TvDialogs.ConfirmListener() {
                             @Override
                             public void onConfirm() {
-                                TvBoxApp.get().history().clear();
+                                TvBoxApp.get().executors().disk().execute(new Runnable() {
+                                    public void run() {
+                                        final boolean cleared = TvBoxApp.get().history().clear();
+                                        TvBoxApp.get().executors().main(new Runnable() {
+                                            public void run() {
+                                                if (isAdded() && getView() != null && !cleared) {
+                                                    android.widget.Toast.makeText(getActivity(), "清空失败，请重试",
+                                                            android.widget.Toast.LENGTH_SHORT).show();
+                                                }
+                                            }
+                                        });
+                                    }
+                                });
                             }
                         });
             }
         });
         TvBoxApp.get().history().addListener(this);
-        refresh();
         return root;
     }
 
     @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        refresh();
+    }
+
+    @Override
     public void onHistoryChanged() {
-        if (isAdded()) {
-            refresh();
-        }
+        TvBoxApp.get().executors().main(new Runnable() {
+            public void run() { if (isAdded() && getView() != null) refresh(); }
+        });
     }
 
     private void refresh() {
-        List<WatchHistoryItem> all = TvBoxApp.get().history().load();
-        List<WatchHistoryItem> valid = new ArrayList<WatchHistoryItem>();
-        for (WatchHistoryItem h : all) {
-            // 过滤规则一致作用于历史；关键字段损坏的条目单独丢弃
-            if (h.movieId == null || h.movieId.isEmpty()
-                    || h.apiLineId == null || h.apiLineId.isEmpty()) {
-                continue;
+        final int generation = viewGeneration;
+        TvBoxApp.get().executors().disk().execute(new Runnable() {
+            public void run() {
+                final List<WatchHistoryItem> valid = new ArrayList<WatchHistoryItem>();
+                for (WatchHistoryItem h : TvBoxApp.get().history().load()) {
+                    if (!ContentFilter.isBlocked(h.movieName, h.typeName, h.remarks)) valid.add(h);
+                }
+                TvBoxApp.get().executors().main(new Runnable() {
+                    public void run() {
+                        if (generation == viewGeneration && isAdded() && getView() != null) render(valid);
+                    }
+                });
             }
-            if (ContentFilter.isBlocked(h.movieName, h.typeName, h.remarks)) {
-                continue;
-            }
-            valid.add(h);
-        }
+        });
+    }
+
+    private void render(List<WatchHistoryItem> valid) {
         if (valid.isEmpty()) {
             adapter.setItems(valid);
             state.showEmpty("暂无观看历史，看过的影片会出现在这里");
         } else {
             state.showContent();
             adapter.setItems(valid);
-            if (grid.findFocus() == null && grid.getChildCount() > 0) {
+            if (!isHidden() && getActivity().getCurrentFocus() == null && grid.getChildCount() > 0) {
                 grid.getChildAt(0).requestFocus();
             }
         }
+        if (!isHidden() && PageFocusState.restore(getView(), pendingFocus)) pendingFocus = null;
+    }
+
+    @Override public void restorePageFocus(Bundle bookmark) {
+        pendingFocus = bookmark;
+        if (!isHidden() && PageFocusState.restore(getView(), pendingFocus)) pendingFocus = null;
+    }
+
+    @Override public void onSaveInstanceState(@NonNull Bundle out) {
+        super.onSaveInstanceState(out);
+        Bundle bookmark = PageFocusState.capture(getView());
+        out.putBundle("focus", bookmark.isEmpty() ? pendingFocus : bookmark);
     }
 
     @Override
     public void onDestroyView() {
+        ++viewGeneration;
         TvBoxApp.get().history().removeListener(this);
         super.onDestroyView();
+        grid = null;
+        state = null;
     }
 
     static final class HistoryAdapter extends RecyclerView.Adapter<HistoryAdapter.Holder> {
@@ -128,7 +169,11 @@ public class HistoryFragment extends Fragment implements HistoryStore.Listener {
 
         HistoryAdapter(OnHistoryClick click) {
             this.click = click;
+            setHasStableIds(true);
+            setStateRestorationPolicy(StateRestorationPolicy.PREVENT_WHEN_EMPTY);
         }
+
+        @Override public long getItemId(int position) { return PageFocusState.stableId(items.get(position).key()); }
 
         void setItems(List<WatchHistoryItem> list) {
             items.clear();
