@@ -474,3 +474,5 @@
 发布时查明线上 CI 初始化失败：运行 37612569688 的 sdkmanager 找不到 setup-android 默认的旧 `tools` 包。显式改为 `packages: platform-tools`；本地原证书 Release 构建已成功，最终发布包会从包含 CI 修正的提交重构建。
 
 发布材料复核时修正 ASCII 校验和文件的 BOM，确保标准 sha256sum 可读；中文清单仍按 UTF-8 BOM 输出。发布工具增加回归，共 16 项通过。
+
+使用标准 sha256sum 实测捕获 Windows CRLF 文件名尾 CR 问题，发布工具改为显式 LF 输出，并补字节级断言；重新生成并检查最终材料。

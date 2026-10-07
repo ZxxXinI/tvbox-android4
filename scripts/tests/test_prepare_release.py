@@ -156,6 +156,7 @@ class PrepareReleaseTest(unittest.TestCase):
         self.invoke()
         expected = hashlib.sha256(self.current.read_bytes()).hexdigest().encode('ascii')
         self.assertTrue((self.output / 'SHA256SUMS').read_bytes().startswith(expected))
+        self.assertNotIn(b'\r', (self.output / 'SHA256SUMS').read_bytes())
 
 
 if __name__ == '__main__':
