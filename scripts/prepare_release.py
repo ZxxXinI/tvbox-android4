@@ -1,5 +1,5 @@
-#!/usr/bin/env python3
-"""Verify an API 19 APK and generate its OTA manifest. Does not upload or publish."""
+﻿#!/usr/bin/env python3
+"""Verify an API 16+ APK and generate its OTA manifest. Does not upload or publish."""
 import argparse
 import hashlib
 import json
@@ -18,23 +18,25 @@ def run(*args):
 
 
 def inspect_apk(apk, tools_dir):
-    badging = run(str(tools_dir / 'aapt'), 'dump', 'badging', str(apk))
+    badging = run(str(tools_dir / ('aapt.exe' if os.name == 'nt' else 'aapt')), 'dump', 'badging', str(apk))
     package = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
     min_sdk = re.search(r"^sdkVersion:'(\d+)'", badging, re.M)
     target_sdk = re.search(r"^targetSdkVersion:'(\d+)'", badging, re.M)
     if not package or not min_sdk or not target_sdk:
         raise ValueError('无法读取 APK 包名、版本或 SDK 信息')
     app_id, code, name = package.groups()
-    if app_id != 'com.tvbox.android44' or int(min_sdk[1]) != 19 or int(target_sdk[1]) != 28 or int(code) <= 0:
-        raise ValueError('APK 必须符合 com.tvbox.android44 / minSdk 19 / targetSdk 28 基线')
-    signature = run(str(tools_dir / 'apksigner'), 'verify', '--verbose', '--print-certs',
-                    '--min-sdk-version', '19', str(apk))
+    # API 19 is accepted for published historical APKs used in upgrade comparisons.
+    minimum = int(min_sdk[1])
+    if app_id != 'com.tvbox.android44' or minimum not in (16, 19) or int(target_sdk[1]) != 28 or int(code) <= 0:
+        raise ValueError('APK 必须符合 com.tvbox.android44 / minSdk 16（历史版本 19）/ targetSdk 28 基线')
+    signature = run(str(tools_dir / ('apksigner.bat' if os.name == 'nt' else 'apksigner')),
+                    'verify', '--verbose', '--print-certs', '--min-sdk-version', str(minimum), str(apk))
     if 'Verified using v1 scheme (JAR signing): true' not in signature:
-        raise ValueError('API 19 发布必须包含有效 v1 签名')
+        raise ValueError('旧 Android 发布必须包含有效 v1 签名')
     cert = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]{64})(?![0-9a-fA-F])', signature)
     if not cert:
         raise ValueError('无法读取有效签名证书摘要')
-    return dict(applicationId=app_id, versionCode=int(code), versionName=name,
+    return dict(applicationId=app_id, minSdk=minimum, targetSdk=int(target_sdk[1]), versionCode=int(code), versionName=name,
                 certificateSha256=cert[1].lower(), debug='android debug' in signature.lower(),
                 signature=signature)
 
@@ -94,7 +96,7 @@ def main():
                     apkSha256=digest.hexdigest(), apkSize=apk.stat().st_size,
                     force=False, changelog=args.changelog)
     signing = 'legacy-debug-release' if args.allow_legacy_debug_upgrade else ('debug-validation-only' if debug else 'release')
-    metadata = dict(applicationId=app_id, minSdk=19, targetSdk=28, apkFile=apk.name,
+    metadata = dict(applicationId=app_id, minSdk=current['minSdk'], targetSdk=current['targetSdk'], apkFile=apk.name,
                     signing=signing,
                     certificateSha256=current['certificateSha256'], **manifest)
     if previous:
@@ -111,9 +113,9 @@ def main():
                               ('signature.txt', signature),
                               ('SHA256SUMS', f'{digest.hexdigest()}  {apk.name}\n')]:
         temp = output / (filename + '.tmp')
-        temp.write_text(content, encoding='utf-8')
+        temp.write_text(content, encoding='utf-8-sig')
         temp.replace(output / filename)
-    print(f'已验证 {app_id} v{name} (code {code})，minSdk 19，v1 签名有效')
+    print(f"已验证 {app_id} v{name} (code {code})，minSdk {current['minSdk']}，v1 签名有效")
     signing_description = ('沿用原调试证书的兼容发布（证书一致）' if args.allow_legacy_debug_upgrade
                            else ('调试，仅供验证' if debug else '发布（升级前仍需与上一版证书比对）'))
     print('签名类型：' + signing_description)

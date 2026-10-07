@@ -24,7 +24,7 @@ import java.util.concurrent.*;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 19, application = StartupUpdateFlowTest.LocalApplication.class)
+@Config(sdk = {16, 19}, application = StartupUpdateFlowTest.LocalApplication.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class StartupUpdateFlowTest {
     static class CountingUpdates extends UpdateRepository {

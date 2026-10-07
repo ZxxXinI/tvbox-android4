@@ -27,7 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {19, 28}, application = TvBoxApp.class)
+@Config(sdk = {16, 19, 28}, application = TvBoxApp.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class UpdateRepositoryTest {
     private MockWebServer server;

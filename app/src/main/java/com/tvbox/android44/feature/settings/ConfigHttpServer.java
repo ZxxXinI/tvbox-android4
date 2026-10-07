@@ -411,7 +411,12 @@ public class ConfigHttpServer {
         });
     }
 
-    private static void close(java.io.Closeable resource) {
-        if (resource != null) try { resource.close(); } catch (IOException ignored) { }
+    // Socket/ServerSocket only implement Closeable from API 19 onward.
+    private static void close(java.net.ServerSocket socket) {
+        if (socket != null) try { socket.close(); } catch (IOException ignored) { }
+    }
+
+    private static void close(java.net.Socket socket) {
+        if (socket != null) try { socket.close(); } catch (IOException ignored) { }
     }
 }

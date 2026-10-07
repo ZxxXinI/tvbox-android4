@@ -7,7 +7,7 @@ exoplayer = "2.19.1"
 okhttp = "3.12.13"
 gson = "2.10.1"
 glide = "4.16.0"
-zxing = "3.5.3"
+zxing = "3.3.3"
 junit = "4.13.2"
 robolectric = "4.10.3"
 

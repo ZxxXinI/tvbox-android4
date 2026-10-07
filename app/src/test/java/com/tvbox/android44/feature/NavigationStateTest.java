@@ -26,7 +26,7 @@ import java.util.function.BooleanSupplier;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 19, application = NavigationStateTest.LocalApplication.class)
+@Config(sdk = {16, 19}, application = NavigationStateTest.LocalApplication.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class NavigationStateTest {
     public static class LocalApplication extends TvBoxApp {

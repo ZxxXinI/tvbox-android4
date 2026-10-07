@@ -861,7 +861,9 @@ public class SettingsFragment extends Fragment {
         qrDialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
             @Override public void onDismiss(android.content.DialogInterface dialog) {
                 stopConfigServer();
-                if (qrReturnTo != null && qrReturnTo.isAttachedToWindow()) qrReturnTo.requestFocus();
+                if (qrReturnTo != null && androidx.core.view.ViewCompat.isAttachedToWindow(qrReturnTo)) {
+                    qrReturnTo.requestFocus();
+                }
                 qrReturnTo = null;
             }
         });

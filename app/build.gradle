@@ -20,10 +20,10 @@ android {
 
     defaultConfig {
         applicationId "com.tvbox.android44"
-        minSdk 19          // 硬约束：Android 4.4 / API 19，不得提高
+        minSdk 16          // Android 4.1 / API 16 compatibility baseline
         targetSdk 28       // 侧载版基线
-        versionCode injectedProp('TVBOX_VERSION_CODE', '2').toInteger()
-        versionName injectedProp('TVBOX_VERSION_NAME', '0.0.2')
+        versionCode injectedProp('TVBOX_VERSION_CODE', '3').toInteger()
+        versionName injectedProp('TVBOX_VERSION_NAME', '0.0.3')
         multiDexEnabled true
         vectorDrawables.useSupportLibrary = true
 
@@ -123,7 +123,7 @@ dependencies {
     annotationProcessor libs.glide.compiler
 
     testImplementation libs.junit
-    // 4.10.x retains API 19 support; this dependency is test-only.
+    // 4.10.x retains API 16 support; this dependency is test-only.
     testImplementation libs.robolectric
     testImplementation libs.mockwebserver
     testImplementation libs.gson

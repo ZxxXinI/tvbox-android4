@@ -1,7 +1,6 @@
 package com.tvbox.android44.feature.detail;
 
 import android.content.Context;
-import android.content.res.Configuration;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.TextView;
@@ -19,7 +18,7 @@ import org.robolectric.annotation.Config;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {19, 23, 28})
+@Config(sdk = {16, 19, 23, 28})
 public class EpisodeGridLayoutTest {
     private void measure(View view, int width, int height) {
         view.measure(View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
@@ -28,10 +27,8 @@ public class EpisodeGridLayoutTest {
     }
 
     private void checkLayout(int screenDp, float fontScale) {
-        Configuration configuration = new Configuration(RuntimeEnvironment.getApplication()
-                .getResources().getConfiguration());
-        configuration.fontScale = fontScale;
-        Context context = RuntimeEnvironment.getApplication().createConfigurationContext(configuration);
+        Context context = com.tvbox.android44.common.FontScale.withScale(
+                RuntimeEnvironment.getApplication(), fontScale);
         context.setTheme(R.style.Theme_TvBox);
         float density = context.getResources().getDisplayMetrics().density;
         View detail = LayoutInflater.from(context).inflate(R.layout.activity_detail, null);

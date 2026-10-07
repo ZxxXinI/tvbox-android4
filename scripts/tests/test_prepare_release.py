@@ -1,4 +1,4 @@
-import contextlib
+﻿import contextlib
 import hashlib
 import importlib.util
 import io
@@ -25,6 +25,7 @@ class PrepareReleaseTest(unittest.TestCase):
         self.current.write_bytes(b'fixture signed APK bytes')
         self.previous.write_bytes(b'previous signed APK bytes')
         self.code = 2
+        self.minimum = 16
         self.certificate = 'a' * 64
         self.old_certificate = self.certificate
         self.v1 = True
@@ -34,8 +35,8 @@ class PrepareReleaseTest(unittest.TestCase):
 
     def binary_output(self, *args):
         old = args[-1] == str(self.previous)
-        if Path(args[0]).name == 'aapt':
-            return "package: name='com.tvbox.android44' versionCode='%d' versionName='fixture'\nsdkVersion:'19'\ntargetSdkVersion:'28'\n" % (1 if old else self.code)
+        if Path(args[0]).stem == 'aapt':
+            return "package: name='com.tvbox.android44' versionCode='%d' versionName='fixture'\nsdkVersion:'%d'\ntargetSdkVersion:'28'\n" % (1 if old else self.code, 19 if old else self.minimum)
         return ('Verified using v1 scheme (JAR signing): %s\nSigner #1 certificate DN: CN=%s\nSigner #1 certificate SHA-256 digest: %s\n'
                 % ('true' if old or self.v1 else 'false', 'Android Debug' if (self.old_debug if old else self.debug) else 'Fixture',
                    self.old_certificate if old else self.certificate))
@@ -48,8 +49,9 @@ class PrepareReleaseTest(unittest.TestCase):
 
     def test_same_certificate_generates_verified_upgrade_material(self):
         self.invoke()
-        manifest = json.loads((self.output / 'update.json').read_text())
-        metadata = json.loads((self.output / 'apk-info.json').read_text())
+        manifest = json.loads((self.output / 'update.json').read_text(encoding='utf-8-sig'))
+        metadata = json.loads((self.output / 'apk-info.json').read_text(encoding='utf-8-sig'))
+        self.assertEqual(16, metadata['minSdk'])
         self.assertEqual(2, manifest['versionCode'])
         self.assertEqual(hashlib.sha256(self.current.read_bytes()).hexdigest(), manifest['apkSha256'])
         self.assertEqual(self.current.stat().st_size, manifest['apkSize'])
@@ -71,11 +73,11 @@ class PrepareReleaseTest(unittest.TestCase):
     def test_explicit_certificate_migration_records_installation_limit(self):
         self.certificate = 'b' * 64
         self.invoke('--allow-certificate-change')
-        metadata = json.loads((self.output / 'apk-info.json').read_text())
+        metadata = json.loads((self.output / 'apk-info.json').read_text(encoding='utf-8-sig'))
         self.assertFalse(metadata['canUpgradePreviousInstallation'])
         self.assertEqual(self.old_certificate, metadata['previousCertificateSha256'])
 
-    def test_missing_v1_signature_refuses_api19_release(self):
+    def test_missing_v1_signature_refuses_legacy_release(self):
         self.v1 = False
         with self.assertRaisesRegex(ValueError, 'v1'):
             self.invoke()
@@ -90,7 +92,7 @@ class PrepareReleaseTest(unittest.TestCase):
     def test_legacy_debug_upgrade_records_original_certificate_release(self):
         self.debug = self.old_debug = True
         self.invoke('--allow-legacy-debug-upgrade')
-        metadata = json.loads((self.output / 'apk-info.json').read_text())
+        metadata = json.loads((self.output / 'apk-info.json').read_text(encoding='utf-8-sig'))
         self.assertEqual('legacy-debug-release', metadata['signing'])
         self.assertTrue(metadata['canUpgradePreviousInstallation'])
         self.assertEqual(self.old_certificate, metadata['certificateSha256'])
@@ -136,6 +138,19 @@ class PrepareReleaseTest(unittest.TestCase):
                 self.invoke('--allow-legacy-debug-upgrade', '--allow-debug-signing')
         self.assertEqual(2, error.exception.code)
         self.assertFalse(self.output.exists())
+
+
+    def test_unsupported_minimum_is_rejected(self):
+        self.minimum = 14
+        with self.assertRaisesRegex(ValueError, 'minSdk'):
+            self.invoke()
+        self.assertFalse(self.output.exists())
+
+    def test_historical_api19_metadata_keeps_actual_sdk(self):
+        self.minimum = 19
+        self.invoke()
+        metadata = json.loads((self.output / 'apk-info.json').read_text(encoding='utf-8-sig'))
+        self.assertEqual(19, metadata['minSdk'])
 
 
 if __name__ == '__main__':

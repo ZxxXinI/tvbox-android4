@@ -96,7 +96,7 @@ public class MainActivity extends BaseActivity {
         startupToken = token;
         startupCheck = app.updates().check(new UpdateRepository.CheckCallback() {
             @Override public void onResult(Result<AppUpdate> result) {
-                if (startupToken != token || isFinishing() || isDestroyed()) return;
+                if (startupToken != token || isFinishing() || isActivityDestroyed()) return;
                 app.startupUpdates().complete(token, android.os.SystemClock.elapsedRealtime());
                 startupToken = 0;
                 startupCheck = null;

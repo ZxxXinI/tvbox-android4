@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">TVBox 4.4</string>
     <string name="nav_history">历史</string>
@@ -46,7 +46,7 @@
     <string name="voice">语音</string>
     <string name="recommend_shuffle">换一批</string>
     <string name="app_brand">TVBox</string>
-    <string name="app_subtitle">影视内容 · Android 4.4+</string>
+    <string name="app_subtitle">影视内容 · Android 4.1+</string>
     <string name="previous_episode">上一集</string>
     <string name="pause">暂停</string>
     <string name="next_episode">下一集</string>

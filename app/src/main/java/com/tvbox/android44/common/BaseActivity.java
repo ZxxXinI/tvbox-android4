@@ -9,6 +9,19 @@ import androidx.appcompat.app.AppCompatActivity;
 /** 横屏深色基类：统一字体缩放。 */
 public abstract class BaseActivity extends AppCompatActivity {
 
+    private boolean activityDestroyed;
+
+    /** Activity.isDestroyed was added in API 17; track our lifecycle on API 16. */
+    public final boolean isActivityDestroyed() {
+        return activityDestroyed || (android.os.Build.VERSION.SDK_INT >= 17 && isDestroyed());
+    }
+
+    @Override
+    protected void onDestroy() {
+        activityDestroyed = true;
+        super.onDestroy();
+    }
+
     @Override
     protected void attachBaseContext(Context newBase) {
         super.attachBaseContext(FontScale.wrap(newBase));

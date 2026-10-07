@@ -16,7 +16,7 @@ import org.robolectric.annotation.Config;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = {19, 23, 28})
+@Config(sdk = {16, 19, 23, 28})
 public class LegacyCertificateTrustTest {
     private InputStream pem() {
         return RuntimeEnvironment.getApplication().getResources().openRawResource(R.raw.isrg_root_x1);

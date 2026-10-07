@@ -121,6 +121,11 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     private boolean mediaHls;
     private boolean mediaFallbackUsed;
     private boolean stopped;
+    private boolean activityDestroyed;
+
+    private boolean isActivityDestroyed() {
+        return activityDestroyed || (android.os.Build.VERSION.SDK_INT >= 17 && isDestroyed());
+    }
     private boolean usingLastUrl;
     private boolean resumeWhenVisible = true;
     private boolean restoringSession;
@@ -355,7 +360,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                 new MovieRepository.Callback<Movie>() {
                     @Override
                     public void onResult(Result<Movie> result) {
-                        if (isFinishing() || isDestroyed()) {
+                        if (isFinishing() || isActivityDestroyed()) {
                             return;
                         }
                         if (result.isSuccess() && result.data() != null) {
@@ -1007,6 +1012,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
 
     @Override
     protected void onDestroy() {
+        activityDestroyed = true;
         handler.removeCallbacksAndMessages(null);
         controller.destroy();
         releasePlayer();

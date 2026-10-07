@@ -179,7 +179,7 @@ public class DetailActivity extends BaseActivity {
                     final WatchHistoryItem history = TvBoxApp.get().history().find(apiId, movieId);
                     TvBoxApp.get().executors().main(new Runnable() {
                         @Override public void run() {
-                            if (isFinishing() || isDestroyed()) return;
+                            if (isFinishing() || isActivityDestroyed()) return;
                             resumeHistory = history;
                             loadDetail();
                         }
@@ -205,7 +205,7 @@ public class DetailActivity extends BaseActivity {
                 new MovieRepository.Callback<Movie>() {
                     @Override
                     public void onResult(Result<Movie> result) {
-                        if (!isFinishing() && !isDestroyed()) {
+                        if (!isFinishing() && !isActivityDestroyed()) {
                             onMainDetail(result);
                         }
                     }
@@ -236,7 +236,7 @@ public class DetailActivity extends BaseActivity {
                 TvDialogs.confirm(this, getString(R.string.history_fallback_title),
                         getString(R.string.history_fallback_message), new TvDialogs.ConfirmListener() {
                             @Override public void onConfirm() {
-                                if (!isFinishing() && !isDestroyed()) {
+                                if (!isFinishing() && !isActivityDestroyed()) {
                                     PlayerActivity.startForResultWithHistory(DetailActivity.this, resumeHistory, true);
                                 }
                             }
@@ -471,7 +471,7 @@ public class DetailActivity extends BaseActivity {
         final int target = selectedEpisode;
         final Runnable focus = new Runnable() {
             @Override public void run() {
-                if (isFinishing() || isDestroyed() || selectedEpisode != target) return;
+                if (isFinishing() || isActivityDestroyed() || selectedEpisode != target) return;
                 RecyclerView.ViewHolder holder = episodesView.findViewHolderForAdapterPosition(target);
                 if (holder != null) {
                     holder.itemView.requestFocus();

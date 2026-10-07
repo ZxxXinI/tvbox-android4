@@ -26,7 +26,7 @@ jobs:
         run: bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease --no-daemon --max-workers=4 --console=plain
       - name: Release version and signing continuity regression tests
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
-      - name: Verify API 19 APK and generate sample OTA metadata
+      - name: Verify API 16 APK and generate sample OTA metadata
         run: >-
           python3 scripts/prepare_release.py
           --apk app/build/outputs/apk/release/app-release.apk

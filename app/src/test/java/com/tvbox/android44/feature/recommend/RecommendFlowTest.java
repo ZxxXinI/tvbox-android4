@@ -30,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.*;
 
 @RunWith(RobolectricTestRunner.class)
-@Config(sdk = 19, application = RecommendFlowTest.LocalApplication.class)
+@Config(sdk = {16, 19}, application = RecommendFlowTest.LocalApplication.class)
 @LooperMode(LooperMode.Mode.PAUSED)
 public class RecommendFlowTest {
     public static class LocalApplication extends TvBoxApp {

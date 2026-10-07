@@ -1,8 +1,12 @@
-﻿# TVBox 4.4（Android 4.4 兼容版）
+﻿# TVBox Android 4.1+ 兼容版
 
 > 本软件由 AI 参考 [ZxxXinI/tvbox](https://github.com/ZxxXinI/tvbox) 编写，是独立维护的兼容版，不代表上游官方发布。
 
-当前构建版本：**v0.0.2（发布候选）**，包名 `com.tvbox.android44`。最低 Android 4.4 / API 19；侧载发行，targetSdk 28、compileSdk 35。使用 Java + XML Views、ExoPlayer 2 和 OkHttp 3.12。
+当前版本：**v0.0.3**，包名 `com.tvbox.android44`。最低 Android 4.1 / API 16；侧载发行，targetSdk 28、compileSdk 35。使用 Java + XML Views、ExoPlayer 2 和 OkHttp 3.12。
+
+[下载最新版](https://github.com/ZxxXinI/tvbox-android4/releases/latest) · [v0.0.3 发布记录](docs/18-v0.0.3发布记录.md)
+
+Android 4.1 扩展的改动与验证见 [兼容记录](docs/17-Android4.1兼容扩展.md)。最低安装版本已下调并加入 API 16 回归，真实设备播放与遥控器仍需验收。仓库、目录和包名保留原标识，以保持既有安装与签名连续性。
 
 ## 当前功能
 
@@ -24,7 +28,7 @@ bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembl
   --no-daemon --max-workers=4 --console=plain
 ```
 
-APK 位于 `app/build/outputs/apk/debug/` 和 `release/`。测试覆盖纯领域逻辑及 Robolectric API 19/23/28；CI 在 `.github/workflows/android.yml`，上传 APK、测试、Lint 和验证清单材料。
+APK 位于 `app/build/outputs/apk/debug/` 和 `release/`。测试覆盖纯领域逻辑及 Robolectric API 16/19/23/28；CI 在 `.github/workflows/android.yml`，上传 APK、测试、Lint 和验证清单材料。
 
 设置项可通过 Gradle 属性、环境变量或未提交的 `local.properties` 注入，参考 [local.properties.example](local.properties.example)。正式发布配置原签名，递增 `TVBOX_VERSION_CODE`，启用 `TVBOX_REQUIRE_RELEASE_SIGNING=true`；未配置签名的 Release 仅为调试签名验证构建。
 
@@ -32,15 +36,15 @@ APK 位于 `app/build/outputs/apk/debug/` 和 `release/`。测试覆盖纯领域
 
 ## 安装与使用
 
-1. 侧载 APK 到 API 19 或以上测试设备。
+1. 侧载 APK 到 API 16 或以上测试设备。
 2. 设置中选择可用视频接口，或扫码添加自定义 MacCMS 接口。
 3. 首页直接浏览该源内容；AI 推荐需配置实际可用的模型服务。
 
-发布进度、签名基线与待解决项见 [发布记录](docs/15-v0.0.2发布准备与记录.md)。
+当前版本的发布与签名核验见 [v0.0.3 发布记录](docs/18-v0.0.3发布记录.md)；上一轮过程保留在 [v0.0.2 历史记录](docs/15-v0.0.2发布准备与记录.md)。
 
 ## 验证与接手
 
-本轮构建、测试、签名和 Lint 结果见 [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)。本云环境没有连接设备，API 19 的安装、真实出画出声与遥控器结论仍待设备验收。
+当前 Android 4.1 扩展的构建、测试、签名和 Lint 结果见 [兼容记录](docs/17-Android4.1兼容扩展.md)；此前验证见 [VERIFICATION_REPORT.md](VERIFICATION_REPORT.md)。本机未连接 API 16 设备，真实安装、出画出声与遥控器结论仍待设备验收。
 
 - [文档入口](docs/README.md)
 - [接手说明](HANDOFF.md)
