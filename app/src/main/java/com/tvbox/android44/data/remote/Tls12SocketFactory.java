@@ -24,6 +24,11 @@ public final class Tls12SocketFactory extends SSLSocketFactory {
         this.delegate = delegate;
     }
 
+    /** Preserve the supplied context's trust manager while enabling legacy protocols. */
+    public static SSLSocketFactory wrap(SSLSocketFactory delegate, int sdkInt) {
+        return sdkInt < 22 ? new Tls12SocketFactory(delegate) : delegate;
+    }
+
     /** API<22 时返回启用 TLS1.2 的工厂；否则返回 null（走系统默认）。 */
     public static SSLSocketFactory createIfNecessary(int sdkInt) {
         if (sdkInt < 22) {

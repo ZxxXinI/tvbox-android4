@@ -8,7 +8,6 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
-import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -130,7 +129,6 @@ public class DetailActivity extends BaseActivity {
         });
         linesView.setAdapter(lineAdapter);
 
-        episodesView.setLayoutManager(new GridLayoutManager(this, 6));
         episodesView.addItemDecoration(new GridSpacingDecoration(
                 (int) (getResources().getDisplayMetrics().density * 8)));
         episodeAdapter = new EpisodeAdapter(new EpisodeAdapter.OnEpisodeClick() {
@@ -139,6 +137,7 @@ public class DetailActivity extends BaseActivity {
                 playEpisode(index);
             }
         });
+        episodesView.setLayoutManager(new EpisodeGridLayoutManager(this, episodeAdapter));
         episodesView.setAdapter(episodeAdapter);
 
         // 展开/收起：聚焦或点击展开长简介，不让页面无限增高

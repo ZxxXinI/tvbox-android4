@@ -40,15 +40,22 @@ public final class HttpClients {
                 .writeTimeout(AppConstants.HTTP_READ_TIMEOUT_MS, TimeUnit.MILLISECONDS)
                 .followRedirects(true)
                 .followSslRedirects(true);
-        // Android 4.x 默认不启用 TLSv1.2，显式开启（不改信任策略）。
-        // 必须用三参数 sslSocketFactory(factory, trustManager)：单参数重载经反射
-        // 提取 TrustManager，在 R8 混淆后失败（IllegalStateException）。
-        javax.net.ssl.SSLSocketFactory tls12 = Tls12SocketFactory.createIfNecessary(
-                android.os.Build.VERSION.SDK_INT);
-        if (tls12 != null) {
-            javax.net.ssl.X509TrustManager trustManager = systemDefaultTrustManager();
-            if (trustManager != null) {
-                builder.sslSocketFactory(tls12, trustManager);
+        // Some pre-Android-8 firmwares lack ISRG Root X1 in their system trust store.
+        // Keep hostname verification and both trust managers' certificate validation.
+        if (android.os.Build.VERSION.SDK_INT < 26) {
+            try (java.io.InputStream root = com.tvbox.android44.app.TvBoxApp.get()
+                    .getResources().openRawResource(com.tvbox.android44.R.raw.isrg_root_x1)) {
+                javax.net.ssl.X509TrustManager trustManager = LegacyCertificateTrust.fromRoot(root);
+                javax.net.ssl.SSLContext context = javax.net.ssl.SSLContext.getInstance("TLS");
+                context.init(null, new javax.net.ssl.TrustManager[]{trustManager}, null);
+                builder.sslSocketFactory(Tls12SocketFactory.wrap(context.getSocketFactory(),
+                        android.os.Build.VERSION.SDK_INT), trustManager);
+            } catch (java.security.GeneralSecurityException | IOException e) {
+                android.util.Log.e("HttpClients", "Legacy root setup failed; using system trust", e);
+                javax.net.ssl.SSLSocketFactory tls12 = Tls12SocketFactory.createIfNecessary(
+                        android.os.Build.VERSION.SDK_INT);
+                javax.net.ssl.X509TrustManager system = systemDefaultTrustManager();
+                if (tls12 != null && system != null) builder.sslSocketFactory(tls12, system);
             }
         }
         base = builder

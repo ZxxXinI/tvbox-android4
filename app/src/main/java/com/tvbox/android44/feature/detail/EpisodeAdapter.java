@@ -102,6 +102,10 @@ public class EpisodeAdapter extends RecyclerView.Adapter<EpisodeAdapter.Holder> 
         return episodes.size();
     }
 
+    String titleAt(int position) {
+        return episodes.get(position).title;
+    }
+
     @Override public long getItemId(int position) {
         return PageFocusState.stableId(key(lineId, episodes.get(position)));
     }
