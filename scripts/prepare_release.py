@@ -113,7 +113,9 @@ def main():
                               ('signature.txt', signature),
                               ('SHA256SUMS', f'{digest.hexdigest()}  {apk.name}\n')]:
         temp = output / (filename + '.tmp')
-        temp.write_text(content, encoding='utf-8-sig')
+        # Chinese JSON/text uses BOM; keep the ASCII checksum file consumable by sha256sum.
+        encoding = 'utf-8-sig' if any('\u4e00' <= c <= '\u9fff' for c in content) else 'utf-8'
+        temp.write_text(content, encoding=encoding)
         temp.replace(output / filename)
     print(f"已验证 {app_id} v{name} (code {code})，minSdk {current['minSdk']}，v1 签名有效")
     signing_description = ('沿用原调试证书的兼容发布（证书一致）' if args.allow_legacy_debug_upgrade

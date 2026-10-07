@@ -472,3 +472,5 @@
 发布前验证：0.0.3/code3 的版本/OTA/旧 API/根证书/选集专项 60 项通过，两种 Lint 通过；发布工具 15 项回归通过。沿用既有完整回归记录，不将 5 项 Windows 存储失败抹去。
 
 发布时查明线上 CI 初始化失败：运行 37612569688 的 sdkmanager 找不到 setup-android 默认的旧 `tools` 包。显式改为 `packages: platform-tools`；本地原证书 Release 构建已成功，最终发布包会从包含 CI 修正的提交重构建。
+
+发布材料复核时修正 ASCII 校验和文件的 BOM，确保标准 sha256sum 可读；中文清单仍按 UTF-8 BOM 输出。发布工具增加回归，共 16 项通过。

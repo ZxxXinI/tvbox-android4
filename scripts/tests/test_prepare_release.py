@@ -152,6 +152,11 @@ class PrepareReleaseTest(unittest.TestCase):
         metadata = json.loads((self.output / 'apk-info.json').read_text(encoding='utf-8-sig'))
         self.assertEqual(19, metadata['minSdk'])
 
+    def test_checksum_file_is_plain_ascii_for_standard_checksum_tools(self):
+        self.invoke()
+        expected = hashlib.sha256(self.current.read_bytes()).hexdigest().encode('ascii')
+        self.assertTrue((self.output / 'SHA256SUMS').read_bytes().startswith(expected))
+
 
 if __name__ == '__main__':
     unittest.main()
