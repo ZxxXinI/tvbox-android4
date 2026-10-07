@@ -6,6 +6,8 @@
 
 最低安装版本由 Android 4.4 / API 19 降为 Android 4.1 / API 16。包名仍为 `com.tvbox.android44`，保留现有签名和 ExoPlayer 2.19.1，使用本仓库独立 APK。此次是本地兼容测试构建，版本仍为 0.0.2/code2；没有创建新 Release 或线上更新清单。
 
+后续更新：2026-10-07 19:19 用户授权后已公开发布 v0.0.3/code3。上文测试包及下方摘要保留为 13:07 的验证快照；最新版 APK、签名和 OTA 公共下载校验见 [v0.0.3 发布记录](18-v0.0.3发布记录.md)。
+
 ## 文件变更与原因
 
 - `app/build.gradle`：minSdk 16；targetSdk 28、compileSdk 35 保持现有基线。
