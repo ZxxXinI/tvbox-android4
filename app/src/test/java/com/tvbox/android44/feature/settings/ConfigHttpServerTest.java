@@ -119,6 +119,19 @@ public class ConfigHttpServerTest {
         callback(); assertTrue(next.get(2, TimeUnit.SECONDS).startsWith("HTTP/1.1 200"));
         assertEquals(1, saves.get()); assertEquals("新来源", fields.get().get("name"));
     }
+    @Test public void stoppedListenerImmediatelyRebindsWhileRequestsArePending() throws Exception {
+        for (int i = 0; i < 20; i++) {
+            ConfigHttpServer old = session(ConfigHttpServer.Mode.AI, 0, 1);
+            Future<String> response = request(old, "POST", old.token(),
+                    "provider=deepseek&model=fixture&apiKey=test-key");
+            Runnable pending = main.poll(2, TimeUnit.SECONDS); assertNotNull(pending);
+            old.stop(); old.stop();
+            ConfigHttpServer fresh = session(ConfigHttpServer.Mode.API, old.port(), 1);
+            pending.run(); drainCallbacks(); response.get(2, TimeUnit.SECONDS);
+            assertEquals(0, saves.get());
+            fresh.stop(); drainCallbacks(); assertPortReleased(fresh.port());
+        }
+    }
     @Test public void bothWrongTokensAndInvalidFormsEnforceFailureLimit() throws Exception {
         ConfigHttpServer badToken = session(ConfigHttpServer.Mode.API, 0, 1);
         for (int i = 0; i < 5; i++) assertTrue(request(badToken, "GET", "wrong", "").get(2, TimeUnit.SECONDS).startsWith("HTTP/1.1 403"));

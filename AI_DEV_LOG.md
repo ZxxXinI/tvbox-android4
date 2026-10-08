@@ -510,3 +510,12 @@
 - `NavigationStateTest.java`：新增 API16/19/23/28 回归，检查两个入口消失且剩余扫码/管理/Key 控件仍可聚焦。
 - 本轮导航/启动更新/更新仓库专项 Debug/Release 各 43 项全部通过；Debug/Release Lint 0 Error/Fatal（63/58 Warning）；手机网页 JS 状态回归通过，发布工具 16 项通过。此前完整各 331 项中的五项 Windows 存储失败保留，不宣称全量通过。
 - README、CHANGELOG、当前基线、HANDOFF、文档入口和本地配置示例同步；详细发布材料与后续线上证据见 [v0.0.4 发布记录](docs/20-v0.0.4发布记录.md)。原私钥不提交、不上传；从固定源码提交构建签名 APK，再创建标签和 Release。
+
+### 2026-10-08 10:22 发布草稿阶段发现监听关闭时序问题
+
+- 初次源码 85c624c 的 GitHub CI 运行37716973515，Debug335项中334通过，`ConfigHttpServerTest.stoppingClosesAcceptedConnectionAndDiscardsPendingSubmission` 在重新绑定原端口时失败。保留 CI 报告，本轮尚未公开 Release/切换 latest。
+- `ConfigHttpServer.java`：新增请求线程池后，监听线程在 accept 中阻塞，Socket.close 与监听描述符真正释放之间存在时序窗口；关闭时在会话锁外有界等待监听工作线程退出，再通知关闭。锁外等待避免关闭与接收回收互相阻塞，重复关闭不重复回调。
+- `ConfigHttpServerTest.java`：补20轮待提交请求关闭、重复关闭、同端口立即重开、旧提交不保存与端口释放回归。
+- 最终发布包将从包含该修正的干净提交重新构建；已上传的草稿附件和未正式发布标签同步修正，初次包不作为正式交付。验证结果见 docs/20。
+
+10:23 复验：关闭/模型服务、导航与OTA专项 Debug/Release各101项通过、0失败/错误，两种Lint0 Error/Fatal；网页状态及16项发布工具回归通过。新20轮关闭回归在普通JVM/API16均通过。首次新增循环曾未清理模拟关闭回调，导致下一轮误取回调而提前关闭尚未提交的客户端；已在每轮末尾排空测试回调队列，未放宽断言或增加延迟。最初全Debug执行记录含五项既有Windows存储失败及这两项测试驱动失败，保留日志，不写为全量通过。

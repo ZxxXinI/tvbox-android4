@@ -452,18 +452,28 @@ public class ConfigHttpServer {
 
     public void stop() { finish(CloseReason.CLOSED); }
 
-    private synchronized void finish(final CloseReason reason) {
-        if (closed) return;
-        closed = true;
-        running.set(false);
-        token = null;
-        if (expiry != null) expiry.cancel(false);
-        if (modelScope != null) modelScope.cancel();
-        close(serverSocket);
-        for (Socket client : activeSockets) close(client);
-        activeSockets.clear();
-        serverSocket = null;
-        executor.shutdownNow();
+    private void finish(final CloseReason reason) {
+        final boolean notifyClosed;
+        synchronized (this) {
+            notifyClosed = !closed;
+            if (notifyClosed) {
+                closed = true;
+                running.set(false);
+                token = null;
+                if (expiry != null) expiry.cancel(false);
+                if (modelScope != null) modelScope.cancel();
+                close(serverSocket);
+                for (Socket client : activeSockets) close(client);
+                activeSockets.clear();
+                serverSocket = null;
+                executor.shutdownNow();
+            }
+        }
+        // A blocked accept can retain the listening descriptor until its worker exits.
+        // Wait outside the session monitor so the worker can finish without deadlock.
+        try { executor.awaitTermination(1, TimeUnit.SECONDS); }
+        catch (InterruptedException interrupted) { Thread.currentThread().interrupt(); }
+        if (!notifyClosed) return;
         requests.shutdownNow();
         if (closeListener != null) callbacks.execute(new Runnable() {
             @Override public void run() { closeListener.onClosed(ConfigHttpServer.this, reason); }
