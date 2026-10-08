@@ -21,17 +21,22 @@ import java.util.UUID;
 public class SettingsRepository {
 
     /** AI 提供方（可配置数据，不在页面写分支）。 */
-    public static final List<AiProvider> AI_PROVIDERS = new ArrayList<AiProvider>();
+    public static final List<AiProvider> AI_PROVIDERS = java.util.Collections.unmodifiableList(
+            java.util.Arrays.asList(
+                    new AiProvider("deepseek", "DeepSeek", "https://api.deepseek.com", "deepseek-flash"),
+                    new AiProvider("qwen", "Qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"),
+                    new AiProvider("glm", "GLM", "https://open.bigmodel.cn/api/paas/v4", "glm-5.3"),
+                    new AiProvider("kimi", "KIMI", "https://api.moonshot.cn/v1", "kimi-k2.5"),
+                    new AiProvider("mimo", "MIMO", "https://api.xiaomimimo.com/v1", "mimo-v2.5")));
 
-    static {
-        AI_PROVIDERS.add(new AiProvider("agnes", "Agnes",
-                "https://apihub.agnes-ai.com/v1/chat/completions", "agnes-2.5-flash"));
-        AI_PROVIDERS.add(new AiProvider("deepseek", "DeepSeek",
-                "https://api.deepseek.com", "deepseek-chat"));
-        AI_PROVIDERS.add(new AiProvider("siliconflow", "SiliconFlow",
-                "https://api.siliconflow.cn/v1", "Qwen/Qwen2.5-7B-Instruct"));
-        AI_PROVIDERS.add(new AiProvider("qwen", "Qwen",
-                "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus"));
+    private static final List<AiProvider> LEGACY_AI_PROVIDERS = java.util.Arrays.asList(
+            new AiProvider("agnes", "Agnes", "https://apihub.agnes-ai.com/v1/chat/completions", "agnes-2.5-flash"),
+            new AiProvider("siliconflow", "SiliconFlow", "https://api.siliconflow.cn/v1", "Qwen/Qwen2.5-7B-Instruct"));
+
+    public static AiProvider findAiProvider(String id) {
+        for (AiProvider p : AI_PROVIDERS) if (p.id.equals(id)) return p;
+        for (AiProvider p : LEGACY_AI_PROVIDERS) if (p.id.equals(id)) return p;
+        return null;
     }
 
     public static final String THEME_DEFAULT = "default";
@@ -48,6 +53,9 @@ public class SettingsRepository {
     private static final String KEY_AI_PROVIDER = "ai_provider";
     private static final String KEY_AI_MODEL = "ai_model";
     private static final String KEY_AI_KEY = "ai_key";
+    private static final String KEY_AI_MIGRATED = "ai_profiles_migrated";
+    private static final String MODEL_PREFIX = "ai_profile_model_";
+    private static final String KEY_PREFIX = "ai_profile_key_";
     private static final String KEY_AUTO_LINE = "auto_line_switch";
     private static final String KEY_CHECK_UPDATE = "check_update_on_start";
     private static final String KEY_IPTV_URL = "iptv_url";
@@ -60,6 +68,18 @@ public class SettingsRepository {
 
     public SettingsRepository(Context context) {
         prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+        migrateAiProfile();
+    }
+
+    private synchronized void migrateAiProfile() {
+        if (prefs.getBoolean(KEY_AI_MIGRATED, false)) return;
+        String id = prefs.getString(KEY_AI_PROVIDER, "");
+        SharedPreferences.Editor edit = prefs.edit();
+        if (findAiProvider(id) != null) {
+            if (!prefs.contains(MODEL_PREFIX + id)) edit.putString(MODEL_PREFIX + id, prefs.getString(KEY_AI_MODEL, ""));
+            if (!prefs.contains(KEY_PREFIX + id)) edit.putString(KEY_PREFIX + id, prefs.getString(KEY_AI_KEY, ""));
+        }
+        edit.putBoolean(KEY_AI_MIGRATED, true).commit();
     }
 
     // ===== 视频来源 =====
@@ -173,44 +193,58 @@ public class SettingsRepository {
 
     // ===== AI =====
 
-    public String aiProviderId() {
+    public synchronized String aiProviderId() {
         String id = prefs.getString(KEY_AI_PROVIDER, "");
-        for (AiProvider p : AI_PROVIDERS) {
-            if (p.id.equals(id)) {
-                return id;
-            }
+        return findAiProvider(id) == null ? "" : id;
+    }
+
+    public synchronized void setAiProvider(String id) {
+        prefs.edit().putString(KEY_AI_PROVIDER, findAiProvider(id) == null ? "" : id).apply();
+    }
+
+    public synchronized AiProvider aiProvider() {
+        return findAiProvider(aiProviderId());
+    }
+
+    public synchronized String aiModel() {
+        return prefs.getString(MODEL_PREFIX + aiProviderId(), "");
+    }
+
+    public synchronized void setAiModel(String model) {
+        if (!aiProviderId().isEmpty()) prefs.edit().putString(MODEL_PREFIX + aiProviderId(),
+                model == null ? "" : model.trim()).apply();
+    }
+
+    public synchronized String aiApiKey() {
+        return prefs.getString(KEY_PREFIX + aiProviderId(), "");
+    }
+
+    public synchronized void setAiApiKey(String key) {
+        if (!aiProviderId().isEmpty()) prefs.edit().putString(KEY_PREFIX + aiProviderId(),
+                key == null ? "" : key.trim()).apply();
+    }
+
+    /** Save the complete configuration once; a model-list request never invokes this. */
+    public synchronized boolean saveAiConfiguration(String id, String model, String key) {
+        if (findAiProvider(id) == null || model == null || model.trim().isEmpty()
+                || !AiProvider.validApiKey(key)) return false;
+        return prefs.edit().putString(KEY_AI_PROVIDER, id)
+                .putString(MODEL_PREFIX + id, model.trim())
+                .putString(KEY_PREFIX + id, key.trim()).commit();
+    }
+
+    public static final class AiConfiguration {
+        public final AiProvider provider;
+        public final String model;
+        public final String key;
+        AiConfiguration(AiProvider provider, String model, String key) {
+            this.provider = provider; this.model = model; this.key = key;
         }
-        return "";
     }
 
-    public void setAiProvider(String id) {
-        prefs.edit().putString(KEY_AI_PROVIDER, id == null ? "" : id).apply();
-    }
-
-    public AiProvider aiProvider() {
-        String id = aiProviderId();
-        for (AiProvider p : AI_PROVIDERS) {
-            if (p.id.equals(id)) {
-                return p;
-            }
-        }
-        return null;
-    }
-
-    public String aiModel() {
-        return prefs.getString(KEY_AI_MODEL, "");
-    }
-
-    public void setAiModel(String model) {
-        prefs.edit().putString(KEY_AI_MODEL, model == null ? "" : model.trim()).apply();
-    }
-
-    public String aiApiKey() {
-        return prefs.getString(KEY_AI_KEY, "");
-    }
-
-    public void setAiApiKey(String key) {
-        prefs.edit().putString(KEY_AI_KEY, key == null ? "" : key.trim()).apply();
+    public synchronized AiConfiguration aiConfiguration() {
+        // Use the public accessors to retain compatibility with injected test settings.
+        return new AiConfiguration(aiProvider(), aiModel(), aiApiKey());
     }
 
     /** 掩码展示。 */

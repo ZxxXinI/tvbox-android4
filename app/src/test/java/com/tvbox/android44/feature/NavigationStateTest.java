@@ -153,4 +153,21 @@ public class NavigationStateTest {
         assertEquals(com.tvbox.android44.common.FontScale.SCALE_LARGE,
                 controller.get().getResources().getConfiguration().fontScale, 0.001f);
     }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void settingsOnlyKeepsQrConfigurationAndManagementEntries() {
+        controller.get().selectTab(MainActivity.Tab.SETTINGS, true);
+        controller.get().getSupportFragmentManager().executePendingTransactions();
+        android.view.View settings = controller.get().getSupportFragmentManager()
+                .findFragmentByTag("SETTINGS").getView();
+        assertNotNull(settings);
+        for (String removed : new String[]{"settings_api_add", "settings_ai_model"}) {
+            int id = controller.get().getResources().getIdentifier(removed, "id", controller.get().getPackageName());
+            assertTrue(id == 0 || settings.findViewById(id) == null);
+        }
+        assertTrue(settings.findViewById(R.id.settings_api_manage).isFocusable());
+        assertTrue(settings.findViewById(R.id.settings_api_qr).isFocusable());
+        assertTrue(settings.findViewById(R.id.settings_ai_qr).isFocusable());
+        assertTrue(settings.findViewById(R.id.settings_ai_key).isFocusable());
+    }
 }

@@ -4,14 +4,12 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
-import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.text.format.Formatter;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.EditText;
-import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
@@ -26,11 +24,9 @@ import com.tvbox.android44.BuildConfig;
 import com.tvbox.android44.R;
 import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.FocusUtils;
-import com.tvbox.android44.common.QrCode;
 import com.tvbox.android44.common.Result;
 import com.tvbox.android44.common.TvDialogs;
 import com.tvbox.android44.data.local.SettingsRepository;
-import com.tvbox.android44.data.repository.MovieRepository;
 import com.tvbox.android44.data.repository.UpdateRepository;
 import com.tvbox.android44.domain.model.ApiLine;
 import com.tvbox.android44.domain.model.AiProvider;
@@ -45,7 +41,6 @@ import java.net.NetworkInterface;
 import java.util.ArrayList;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.UUID;
 
 /**
  * 设置页（文档 09 §1/§6/§9）：
@@ -62,7 +57,6 @@ public class SettingsFragment extends Fragment {
     private TextView btnFont;
     private TextView btnApi;
     private TextView btnAiProvider;
-    private TextView btnAiModel;
     private TextView btnAiKey;
     private TextView btnAiQr;
     private TextView btnAutoLine;
@@ -78,7 +72,6 @@ public class SettingsFragment extends Fragment {
     private AlertDialog qrDialog;
     private View qrReturnTo;
     private UpdateRepository.CheckHandle updateHandle;
-    private MovieRepository.Request testRequest;
     private File downloadedApk;
     private boolean downloading;
     private AppUpdate pendingStartupUpdate;
@@ -94,7 +87,6 @@ public class SettingsFragment extends Fragment {
         btnFont = root.findViewById(R.id.settings_font);
         btnApi = root.findViewById(R.id.settings_api);
         btnAiProvider = root.findViewById(R.id.settings_ai_provider);
-        btnAiModel = root.findViewById(R.id.settings_ai_model);
         btnAiKey = root.findViewById(R.id.settings_ai_key);
         btnAiQr = root.findViewById(R.id.settings_ai_qr);
         btnAutoLine = root.findViewById(R.id.settings_auto_line);
@@ -124,12 +116,6 @@ public class SettingsFragment extends Fragment {
                 pickApi();
             }
         });
-        root.findViewById(R.id.settings_api_add).setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                addCustomApi();
-            }
-        });
         root.findViewById(R.id.settings_api_manage).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -146,12 +132,6 @@ public class SettingsFragment extends Fragment {
             @Override
             public void onClick(View v) {
                 pickAiProvider();
-            }
-        });
-        btnAiModel.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                editAiModel();
             }
         });
         btnAiKey.setOnClickListener(new View.OnClickListener() {
@@ -283,8 +263,6 @@ public class SettingsFragment extends Fragment {
         btnApi.setText(getString(R.string.current_source_label, s.currentApi().name));
         AiProvider provider = s.aiProvider();
         btnAiProvider.setText(getString(R.string.ai_provider_label, provider == null ? getString(R.string.not_selected) : provider.name));
-        String model = s.aiModel();
-        btnAiModel.setText(getString(R.string.model_label, model.isEmpty() ? getString(R.string.not_configured) : model));
         btnAiKey.setText(getString(R.string.api_key_label, SettingsRepository.maskKey(s.aiApiKey())));
         btnAutoLine.setText(getString(R.string.auto_line_label, getString(s.autoLineSwitch() ? R.string.enabled : R.string.disabled)));
         btnCheckToggle.setText(getString(R.string.startup_update_label, getString(s.checkUpdateOnStart() ? R.string.enabled : R.string.disabled)));
@@ -363,66 +341,10 @@ public class SettingsFragment extends Fragment {
                 });
     }
 
-    private void addCustomApi() {
-        showInput("添加自定义视频源", "接口名称（例如 我的资源站）", null,
-                "MacCMS 地址（http/https 开头）", null, new OnInputSubmit() {
-                    @Override
-                    public void onSubmit(String name, String url) {
-                        if (name.isEmpty()) {
-                            toast("接口名称不能为空");
-                            return;
-                        }
-                        if (!SettingsRepository.isValidBaseUrl(url)) {
-                            toast("地址不合法：必须以 http:// 或 https:// 开头");
-                            return;
-                        }
-                        testAndSaveCustomApi(name, url);
-                    }
-                });
-    }
-
-    /** 保存前轻量测试（列表页请求）；失败不默认保存，需用户确认。 */
-    private void testAndSaveCustomApi(final String name, final String url) {
-        final String normalized = SettingsRepository.normalizeBaseUrl(url);
-        // 随机临时 ID：避免失败冷却阻塞用户立即重试
-        ApiLine testLine = new ApiLine("test-" + UUID.randomUUID().toString().substring(0, 8),
-                name, normalized, false);
-        toast("正在测试接口…");
-        testRequest = TvBoxApp.get().movies().fetchByCategory(testLine, null, 1,
-                new MovieRepository.Callback<com.tvbox.android44.domain.model.PagedMovies>() {
-                    @Override
-                    public void onResult(Result<com.tvbox.android44.domain.model.PagedMovies> result) {
-                        if (!isAdded() || getView() == null) {
-                            return;
-                        }
-                        if (result.isSuccess() && result.data() != null) {
-                            saveCustomApi(name, normalized);
-                            return;
-                        }
-                        String why = result.asFailure() != null
-                                ? result.asFailure().userMessage : "未知错误";
-                        TvDialogs.confirm(getActivity(), "接口测试未通过",
-                                "测试请求失败：" + why + "\n仍要保存该接口吗？",
-                                new TvDialogs.ConfirmListener() {
-                                    @Override
-                                    public void onConfirm() {
-                                        saveCustomApi(name, normalized);
-                                    }
-                                });
-                    }
-                });
-    }
-
-    private void saveCustomApi(String name, String url) {
-        ApiLine added = TvBoxApp.get().settings().addCustomApi(name, url);
-        refresh();
-        toast("已添加自定义接口「" + added.name + "」");
-    }
-
     private void manageCustomApis() {
         final List<ApiLine> customs = TvBoxApp.get().settings().customApis();
         if (customs.isEmpty()) {
-            toast("暂无自定义接口，可先添加或扫码配置");
+            toast("暂无自定义接口，请先扫码添加接口");
             return;
         }
         List<String> names = new ArrayList<String>();
@@ -479,21 +401,6 @@ public class SettingsFragment extends Fragment {
                         if (s.aiModel().isEmpty()) {
                             s.setAiModel(picked.defaultModel);
                         }
-                        refresh();
-                    }
-                });
-    }
-
-    private void editAiModel() {
-        showInput("模型名", "例如 deepseek-chat / qwen-plus",
-                TvBoxApp.get().settings().aiModel(), null, null, new OnInputSubmit() {
-                    @Override
-                    public void onSubmit(String value, String unused) {
-                        if (value.isEmpty()) {
-                            toast("模型名不能为空");
-                            return;
-                        }
-                        TvBoxApp.get().settings().setAiModel(value);
                         refresh();
                     }
                 });
@@ -848,13 +755,15 @@ public class SettingsFragment extends Fragment {
         String url = "http://" + ip + ":" + configServer.port() + "/" + configServer.token();
         View view = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_qr_config, null);
         TextView urlView = view.findViewById(R.id.qr_url);
-        TextView hintView = view.findViewById(R.id.qr_hint);
-        ImageView image = view.findViewById(R.id.qr_image);
+        final TextView hintView = view.findViewById(R.id.qr_hint);
+        com.tvbox.android44.common.ui.QrImageView image = view.findViewById(R.id.qr_image);
         urlView.setText(url);
-        Bitmap qr = QrCode.encode(url, 480);
-        if (qr != null) image.setImageBitmap(qr);
-        else image.setVisibility(View.GONE);
-        hintView.setText(getString(qr == null ? R.string.qr_manual_hint : R.string.qr_session_hint));
+        hintView.setText(R.string.qr_session_hint);
+        image.setCode(url, new com.tvbox.android44.common.ui.QrImageView.ReadyListener() {
+            @Override public void onReady(boolean success) {
+                hintView.setText(success ? R.string.qr_session_hint : R.string.qr_manual_hint);
+            }
+        });
         qrDialog = new AlertDialog.Builder(getActivity(), R.style.TvDialog)
                 .setTitle(mode == ConfigHttpServer.Mode.AI ? R.string.qr_ai_title : R.string.qr_api_title)
                 .setView(view).setCancelable(true).create();
@@ -871,6 +780,7 @@ public class SettingsFragment extends Fragment {
             @Override public void onClick(View view) { qrDialog.dismiss(); }
         });
         qrDialog.show();
+        image.requestFocus();
     }
 
     /** 手机端提交回调（主线程）：保存后关会话；返回 false 会向手机端提示保存失败。 */
@@ -879,10 +789,8 @@ public class SettingsFragment extends Fragment {
         SettingsRepository s = TvBoxApp.get().settings();
         boolean saved;
         if (session.mode() == ConfigHttpServer.Mode.AI) {
-            s.setAiProvider(orEmpty(fields.get("provider")));
-            s.setAiModel(orEmpty(fields.get("model")));
-            s.setAiApiKey(orEmpty(fields.get("apiKey")));
-            saved = s.aiProviderId().equals(orEmpty(fields.get("provider")));
+            saved = s.saveAiConfiguration(orEmpty(fields.get("provider")),
+                    orEmpty(fields.get("model")), orEmpty(fields.get("apiKey")));
         } else {
             String name = orEmpty(fields.get("name"));
             String url = orEmpty(fields.get("baseUrl"));
@@ -1035,9 +943,6 @@ public class SettingsFragment extends Fragment {
         ++viewGeneration;
         if (updateHandle != null) {
             updateHandle.cancel();
-        }
-        if (testRequest != null) {
-            testRequest.cancel();
         }
         downloading = false;
         super.onDestroyView();

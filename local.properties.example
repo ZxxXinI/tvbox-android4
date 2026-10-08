@@ -1,12 +1,12 @@
 sdk.dir=/path/to/Android/Sdk
 # TVBOX_PLATFORM_LIVE_SERVICE_URL=http://your-lan-server:8868
-# TVBOX_OTA_MANIFEST_URL=https://your-host/tvbox-android44/update.json
+# TVBOX_OTA_MANIFEST_URL=https://github.com/ZxxXinI/tvbox-android4/releases/latest/download/update.json
 # TVBOX_IPTV_SOURCE_URL=http://your-host/tvbox/result.txt
 # TVBOX_STORE_FILE=../keystore/release.jks
 # TVBOX_STORE_PASSWORD=
 # TVBOX_KEY_ALIAS=
 # TVBOX_KEY_PASSWORD=
 # 可同时通过环境变量注入。正式发布须递增内部版本号，并启用签名强校验。
-TVBOX_VERSION_CODE=2
-TVBOX_VERSION_NAME=0.0.2
+TVBOX_VERSION_CODE=4
+TVBOX_VERSION_NAME=0.0.4
 TVBOX_REQUIRE_RELEASE_SIGNING=false

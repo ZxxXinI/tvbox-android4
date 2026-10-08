@@ -19,21 +19,27 @@ public class AiClientTest {
     private AiClient.ChatResult ask(AiClient client, CancelScope scope) throws Exception {
         return client.chat(server.url("/v1").toString(), "unit-test-key", "fixture-model", "system", "推荐电影", scope);
     }
-    @Test public void fourProvidersNormalizePathsAndSendModelAuthorizationAndMessages() throws Exception {
-        String[] urls = {"https://apihub.agnes-ai.com/v1/chat/completions", "https://api.deepseek.com/chat/completions",
-                "https://api.siliconflow.cn/v1/chat/completions", "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"};
+    @Test public void fiveProvidersUseTheirOwnChatAuthenticationAndDefaultParameters() throws Exception {
+        String[] urls = {"https://api.deepseek.com/chat/completions",
+                "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
+                "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+                "https://api.moonshot.cn/v1/chat/completions", "https://api.xiaomimimo.com/v1/chat/completions"};
         for (int i = 0; i < SettingsRepository.AI_PROVIDERS.size(); i++) {
             AiProvider provider = SettingsRepository.AI_PROVIDERS.get(i);
             assertEquals(urls[i], AiClient.normalizeApiBase(provider.apiBase));
             String path = HttpUrl.parse(provider.apiBase).encodedPath();
             server.enqueue(new MockResponse().setBody("{\"choices\":[{\"message\":{\"content\":\"推荐结果\"}}]}"));
-            AiClient.ChatResult result = client().chat(server.url(path).toString(), "unit-test-key", provider.defaultModel, "system", "query", null);
+            AiProvider local = new AiProvider(provider.id, provider.name, server.url(path).toString(), provider.defaultModel);
+            AiClient.ChatResult result = client().chat(local, "unit-test-key", provider.defaultModel, "system", "query", null);
             assertEquals("推荐结果", result.content);
             RecordedRequest request = server.takeRequest(1, TimeUnit.SECONDS);
             assertEquals(HttpUrl.parse(urls[i]).encodedPath(), request.getPath());
-            assertEquals("Bearer unit-test-key", request.getHeader("Authorization"));
+            if ("mimo".equals(provider.id)) {
+                assertEquals("unit-test-key", request.getHeader("api-key")); assertNull(request.getHeader("Authorization"));
+            } else assertEquals("Bearer unit-test-key", request.getHeader("Authorization"));
             com.google.gson.JsonObject body = JsonParser.parseString(request.getBody().readUtf8()).getAsJsonObject();
             assertEquals(provider.defaultModel, body.get("model").getAsString()); assertEquals(2, body.getAsJsonArray("messages").size());
+            assertFalse(body.has("temperature"));
         }
     }
     @Test public void unauthorizedAndRateLimitResponsesNeverReturnServerBody() throws Exception {
@@ -70,5 +76,23 @@ public class AiClientTest {
             Future<?> task = worker.submit(() -> { try { ask(client(), scope); fail(); } catch (Exception expected) { assertTrue(scope.isCancelled()); } });
             assertNotNull(server.takeRequest(1, TimeUnit.SECONDS)); scope.cancel(); task.get(2, TimeUnit.SECONDS);
         } finally { worker.shutdownNow(); }
+    }
+
+    @Test public void invalidKeyAndSupplierRedirectCannotLeakCredentials() throws Exception {
+        try {
+            client().chat(server.url("/v1").toString(), "bad\nprivate-key-marker", "model", "system", "query", null);
+            fail();
+        } catch (IOException expected) { assertEquals("API_KEY_FORMAT", expected.getMessage()); }
+        assertEquals(0, server.getRequestCount());
+        MockWebServer target = new MockWebServer(); target.start();
+        try {
+            server.enqueue(new MockResponse().setResponseCode(302).setHeader("Location", target.url("/steal")));
+            try {
+                client().chat(new AiProvider("mimo", "MIMO", server.url("/v1").toString(), "model"),
+                        "unit-test-key", "model", "system", "query", null);
+                fail();
+            } catch (IOException expected) { assertEquals("HTTP 302", expected.getMessage()); }
+            assertEquals(0, target.getRequestCount());
+        } finally { target.shutdown(); }
     }
 }

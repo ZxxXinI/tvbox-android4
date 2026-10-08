@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:fillViewport="false">
+<LinearLayout
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:gravity="center_horizontal"
@@ -14,14 +18,14 @@
         android:textColor="@color/accent"
         android:textSize="14sp" />
 
-    <ImageView
+    <com.tvbox.android44.common.ui.QrImageView
         android:id="@+id/qr_image"
-        android:layout_width="320dp"
-        android:layout_height="320dp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
         android:layout_marginTop="14dp"
         android:background="@color/text_primary"
         android:contentDescription="@string/qr_config_desc"
-        android:scaleType="fitCenter" />
+        android:scaleType="center" />
 
     <TextView
         android:id="@+id/qr_hint"
@@ -40,3 +44,4 @@
         android:layout_marginTop="16dp"
         android:text="@string/close_session" />
 </LinearLayout>
+</ScrollView>

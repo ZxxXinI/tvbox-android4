@@ -3,6 +3,9 @@ package com.tvbox.android44.feature.settings;
 import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.data.local.SettingsRepository;
+import com.tvbox.android44.data.remote.AiModelsClient;
+import com.tvbox.android44.data.remote.CancelScope;
+import com.tvbox.android44.domain.model.AiProvider;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
@@ -33,6 +36,9 @@ public class ConfigHttpServer {
     public enum CloseReason { CLOSED, SAVED, EXPIRED, FAILURES }
     public interface SubmitListener { boolean onSubmit(ConfigHttpServer session, Map<String, String> fields); }
     public interface CloseListener { void onClosed(ConfigHttpServer session, CloseReason reason); }
+    interface ModelsLoader {
+        AiModelsClient.Catalog load(AiProvider provider, String key, CancelScope scope) throws IOException;
+    }
     interface Clock { long now(); }
 
     private final Mode mode;
@@ -45,6 +51,8 @@ public class ConfigHttpServer {
     private final long ttl;
     private final int basePort;
     private final int portTries;
+    private final ModelsLoader modelsLoader;
+    private volatile CancelScope modelScope;
     private final ExecutorService executor = Executors.newSingleThreadExecutor(new java.util.concurrent.ThreadFactory() {
         @Override public Thread newThread(Runnable runnable) {
             Thread thread = new Thread(runnable, "tvbox-config-http");
@@ -53,8 +61,15 @@ public class ConfigHttpServer {
         }
     });
     private final AtomicBoolean running = new AtomicBoolean();
+    private final ExecutorService requests = new java.util.concurrent.ThreadPoolExecutor(2, 2, 0,
+            TimeUnit.MILLISECONDS, new java.util.concurrent.ArrayBlockingQueue<Runnable>(8),
+            new java.util.concurrent.ThreadFactory() {
+                @Override public Thread newThread(Runnable task) {
+                    Thread thread = new Thread(task, "tvbox-config-request"); thread.setDaemon(true); return thread;
+                }
+            });
+    private final java.util.Set<Socket> activeSockets = new java.util.HashSet<Socket>();
     private ServerSocket serverSocket;
-    private Socket activeSocket;
     private ScheduledFuture<?> expiry;
     private volatile int port = -1;
     private volatile String token;
@@ -76,9 +91,20 @@ public class ConfigHttpServer {
     ConfigHttpServer(Mode mode, InetAddress address, int basePort, int portTries, long ttl,
                      ScheduledExecutorService scheduler, Executor callbacks, Clock clock,
                      SubmitListener listener, CloseListener closeListener) {
+        this(mode, address, basePort, portTries, ttl, scheduler, callbacks, clock, listener,
+                closeListener, new ModelsLoader() {
+                    @Override public AiModelsClient.Catalog load(AiProvider provider, String key, CancelScope scope)
+                            throws IOException { return new AiModelsClient().fetch(provider, key, scope); }
+                });
+    }
+
+    ConfigHttpServer(Mode mode, InetAddress address, int basePort, int portTries, long ttl,
+                     ScheduledExecutorService scheduler, Executor callbacks, Clock clock,
+                     SubmitListener listener, CloseListener closeListener, ModelsLoader modelsLoader) {
         this.mode = mode; this.address = address; this.basePort = basePort; this.portTries = portTries;
         this.ttl = ttl; this.scheduler = scheduler; this.callbacks = callbacks; this.clock = clock;
         this.listener = listener; this.closeListener = closeListener;
+        this.modelsLoader = modelsLoader;
     }
 
     public Mode mode() { return mode; }
@@ -122,17 +148,26 @@ public class ConfigHttpServer {
                 socket = listening.accept();
                 synchronized (this) {
                     if (!running.get()) { close(socket); break; }
-                    activeSocket = socket;
+                    activeSockets.add(socket);
                 }
                 socket.setSoTimeout(8000);
-                handle(socket);
+                final Socket client = socket;
+                requests.execute(new Runnable() {
+                    @Override public void run() {
+                        try { handle(client); }
+                        finally { close(client); synchronized (ConfigHttpServer.this) { activeSockets.remove(client); } }
+                    }
+                });
+                socket = null; // Ownership transferred to the bounded request executor.
             } catch (SocketException error) {
                 if (!running.get()) break;
+            } catch (java.util.concurrent.RejectedExecutionException ignored) {
+                // A full queue is closed rather than allocating unbounded clients/threads.
             } catch (IOException ignored) {
                 // A broken client connection must not terminate the whole session.
             } finally {
                 close(socket);
-                synchronized (this) { if (activeSocket == socket) activeSocket = null; }
+                if (socket != null) synchronized (this) { activeSockets.remove(socket); }
             }
         }
     }
@@ -166,13 +201,20 @@ public class ConfigHttpServer {
             if (contentLength > AppConstants.CONFIG_MAX_REQUEST_BYTES) {
                 reject(socket, 413, "Payload Too Large", "提交内容过长"); return;
             }
-            String suppliedToken = extractToken(parts[1]);
+            boolean modelsRequest = parts[1].endsWith("/models");
+            String suppliedToken = extractToken(modelsRequest
+                    ? parts[1].substring(0, parts[1].length() - 7) : parts[1]);
             boolean tokenValid;
             synchronized (this) {
                 tokenValid = validNow() && token.equals(suppliedToken);
             }
             if (!tokenValid) {
                 reject(socket, 403, "Forbidden", "会话已过期或无效，请在电视端重新生成二维码");
+                return;
+            }
+            if (modelsRequest && (mode != Mode.AI || !"POST".equals(parts[0]))) {
+                respond(socket, 404, "Not Found", "application/json; charset=utf-8",
+                        new com.google.gson.Gson().toJson(AiModelsClient.Catalog.error("此会话不支持模型查询")));
                 return;
             }
             if ("GET".equals(parts[0])) {
@@ -186,6 +228,10 @@ public class ConfigHttpServer {
                     read += count;
                 }
                 Map<String, String> fields = parseForm(new String(body, "UTF-8"));
+                if (modelsRequest) {
+                    loadModels(socket, fields);
+                    return;
+                }
                 if (!validate(fields)) {
                     reject(socket, 400, "Bad Request", "字段不合法：请检查名称、URL 或模型"); return;
                 }
@@ -194,6 +240,38 @@ public class ConfigHttpServer {
         } catch (BadRequest | IllegalArgumentException error) {
             try { reject(socket, 400, "Bad Request", "请求格式不正确"); } catch (IOException ignored) { }
         } catch (IOException ignored) { }
+    }
+
+    private void loadModels(Socket socket, Map<String, String> fields) throws IOException {
+        AiProvider provider = null;
+        for (AiProvider candidate : SettingsRepository.AI_PROVIDERS) {
+            if (candidate.id.equals(fields.get("provider"))) provider = candidate;
+        }
+        String key = fields.get("apiKey");
+        if (provider == null || !AiProvider.validApiKey(key)) {
+            respond(socket, 400, "Bad Request", "application/json; charset=utf-8",
+                    new com.google.gson.Gson().toJson(AiModelsClient.Catalog.error("请检查提供方和 API Key")));
+            return;
+        }
+        CancelScope scope = new CancelScope();
+        synchronized (this) {
+            if (!validNow()) return;
+            if (modelScope != null) modelScope.cancel();
+            modelScope = scope;
+        }
+        try {
+            AiModelsClient.Catalog catalog;
+            try { catalog = modelsLoader.load(provider, key.trim(), scope); }
+            catch (IOException | RuntimeException error) {
+                catalog = AiModelsClient.presets(provider.id, "模型列表获取失败");
+            }
+            if (scope.isCancelled() || !validNow()) return;
+            respond(socket, 200, "OK", "application/json; charset=utf-8",
+                    new com.google.gson.Gson().toJson(catalog));
+        } finally {
+            scope.cancel();
+            synchronized (this) { if (modelScope == scope) modelScope = null; }
+        }
     }
 
     private void submit(Socket socket, final Map<String, String> fields) throws IOException {
@@ -304,7 +382,7 @@ public class ConfigHttpServer {
                     break;
                 }
             }
-            return known && !model.trim().isEmpty() && !key.trim().isEmpty();
+            return known && !model.trim().isEmpty() && AiProvider.validApiKey(key);
         }
         String name = fields.get("name");
         String url = fields.get("baseUrl");
@@ -330,34 +408,13 @@ public class ConfigHttpServer {
     private String formHtml(String token) {
         String action = "/" + token;
         if (mode == Mode.AI) {
-            StringBuilder options = new StringBuilder();
-            for (com.tvbox.android44.domain.model.AiProvider p : SettingsRepository.AI_PROVIDERS) {
-                options.append("<option value=\"").append(p.id).append("\">")
-                        .append(p.name).append("</option>");
-            }
-            return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
-                    + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                    + "<title>TVBox AI 配置</title></head>"
-                    + "<body style=\"font-family:sans-serif;max-width:480px;margin:24px auto;padding:0 16px\">"
-                    + "<h2>TVBox 4.4 · AI 配置</h2>"
-                    + "<form method=\"POST\" action=\"" + action + "\">"
-                    + "<p>提供方：<br><select name=\"provider\" style=\"width:100%;padding:8px\">"
-                    + options.toString() + "</select></p>"
-                    + "<p>模型名：<br><input name=\"model\" style=\"width:100%;padding:8px\" "
-                    + "placeholder=\"例如 deepseek-chat\"></p>"
-                    + "<p>API Key：<br><input name=\"apiKey\" type=\"password\" "
-                    + "style=\"width:100%;padding:8px\" placeholder=\"只用于本次保存\"></p>"
-                    + "<p><button type=\"submit\" style=\"padding:10px 28px\">保存配置</button></p>"
-                    + "</form>"
-                    + "<p style=\"color:#888;font-size:12px\">本页面仅在本局域网会话期间有效，"
-                    + "提交成功后服务自动关闭；Key 只保存在电视端应用私有存储。</p>"
-                    + "</body></html>";
+            return AiConfigPage.render(token);
         }
         return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                + "<title>TVBox 视频接口配置</title></head>"
+                + "<title>TVBox4.1+ 视频接口配置</title></head>"
                 + "<body style=\"font-family:sans-serif;max-width:480px;margin:24px auto;padding:0 16px\">"
-                + "<h2>TVBox 4.4 · 自定义视频接口</h2>"
+                + "<h2>TVBox4.1+ · 自定义视频接口</h2>"
                 + "<form method=\"POST\" action=\"" + action + "\">"
                 + "<p>接口名称：<br><input name=\"name\" style=\"width:100%;padding:8px\" "
                 + "placeholder=\"例如 我的资源站\"></p>"
@@ -401,11 +458,13 @@ public class ConfigHttpServer {
         running.set(false);
         token = null;
         if (expiry != null) expiry.cancel(false);
+        if (modelScope != null) modelScope.cancel();
         close(serverSocket);
-        close(activeSocket);
+        for (Socket client : activeSockets) close(client);
+        activeSockets.clear();
         serverSocket = null;
-        activeSocket = null;
         executor.shutdownNow();
+        requests.shutdownNow();
         if (closeListener != null) callbacks.execute(new Runnable() {
             @Override public void run() { closeListener.onClosed(ConfigHttpServer.this, reason); }
         });

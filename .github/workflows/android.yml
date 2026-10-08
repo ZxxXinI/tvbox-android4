@@ -25,9 +25,11 @@ jobs:
         run: sdkmanager 'platforms;android-35' 'build-tools;34.0.0' 'build-tools;35.0.0' 'platform-tools'
       - uses: gradle/actions/setup-gradle@v4
       - name: Tests, lint and Debug/Release validation builds
-        run: bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease --no-daemon --max-workers=4 --console=plain
+        run: bash gradlew testDebugUnitTest testReleaseUnitTest lintDebug lintRelease assembleDebug assembleRelease --no-daemon --max-workers=4 --console=plain -PTVBOX_OTA_MANIFEST_URL=
       - name: Release version and signing continuity regression tests
         run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - name: Phone AI configuration state regression
+        run: node scripts/tests/phone_ai_page_test.js app/build/test-ui/phone-ai-page.html
       - name: Verify API 16 APK and generate sample OTA metadata
         run: >-
           python3 scripts/prepare_release.py

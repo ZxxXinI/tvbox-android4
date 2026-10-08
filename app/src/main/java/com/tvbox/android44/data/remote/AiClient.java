@@ -7,6 +7,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonElement;
 import com.tvbox.android44.common.ErrorKind;
+import com.tvbox.android44.domain.model.AiProvider;
 
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
@@ -18,7 +19,7 @@ import okhttp3.RequestBody;
 import okhttp3.Response;
 
 /**
- * OpenAI Chat Completions 兼容客户端（Agnes/DeepSeek/SiliconFlow/Qwen）。
+ * OpenAI Chat Completions 兼容客户端（五家默认提供方及历史配置）。
  * Authorization 头绝不写入日志。
  */
 public class AiClient {
@@ -66,13 +67,29 @@ public class AiClient {
     public ChatResult chat(String apiBase, String apiKey, String model,
                            String systemPrompt, String userQuery,
                            @Nullable CancelScope scope) throws IOException {
+        return chat(apiBase, apiKey, model, systemPrompt, userQuery, scope, false, true);
+    }
+
+    public ChatResult chat(AiProvider provider, String apiKey, String model,
+                           String systemPrompt, String userQuery,
+                           @Nullable CancelScope scope) throws IOException {
+        boolean legacy = "agnes".equals(provider.id) || "siliconflow".equals(provider.id);
+        return chat(provider.apiBase, apiKey, model, systemPrompt, userQuery, scope,
+                "mimo".equals(provider.id), legacy);
+    }
+
+    private ChatResult chat(String apiBase, String apiKey, String model, String systemPrompt,
+                            String userQuery, CancelScope scope, boolean apiKeyHeader,
+                            boolean fixedTemperature) throws IOException {
+        if (!AiProvider.validApiKey(apiKey)) throw new IOException("API_KEY_FORMAT");
+        apiKey = apiKey.trim();
         String url = normalizeApiBase(apiBase);
         if (url.isEmpty()) {
             throw new IOException("api base 非法");
         }
         JsonObject body = new JsonObject();
         body.addProperty("model", model);
-        body.addProperty("temperature", 0.4);
+        if (fixedTemperature) body.addProperty("temperature", 0.4);
         body.addProperty("max_tokens", 1200);
         JsonArray messages = new JsonArray();
         JsonObject sys = new JsonObject();
@@ -87,12 +104,15 @@ public class AiClient {
 
         Request request = new Request.Builder()
                 .url(url)
-                .header("Authorization", "Bearer " + apiKey)
+                .header(apiKeyHeader ? "api-key" : "Authorization",
+                        apiKeyHeader ? apiKey : "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .post(RequestBody.create(JSON, GSON.toJson(body)))
                 .build();
 
-        okhttp3.Call call = http.newCall(request);
+        OkHttpClient selectedHttp = fixedTemperature ? http
+                : http.newBuilder().followRedirects(false).followSslRedirects(false).build();
+        okhttp3.Call call = selectedHttp.newCall(request);
         if (scope != null) {
             scope.register(call);
         }

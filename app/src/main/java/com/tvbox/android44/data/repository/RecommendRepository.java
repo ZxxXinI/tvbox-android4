@@ -44,9 +44,10 @@ public class RecommendRepository {
     }
 
     public Handle ask(final String userQuery, final Callback cb) {
-        final AiProvider provider = settings.aiProvider();
-        final String model = settings.aiModel();
-        final String key = settings.aiApiKey();
+        final SettingsRepository.AiConfiguration config = settings.aiConfiguration();
+        final AiProvider provider = config.provider;
+        final String model = config.model;
+        final String key = config.key;
         final CancelScope scope = new CancelScope();
         if (provider == null || key.isEmpty() || model.isEmpty()) {
             deliver(scope, cb, new Result.Failure<List<AiRecommendItem>>(
@@ -60,7 +61,7 @@ public class RecommendRepository {
                             public Result<List<AiRecommendItem>> call() {
                                 try {
                                     AiClient.ChatResult chat = client.chat(
-                                            provider.apiBase, key, model,
+                                            provider, key, model,
                                             SYSTEM_PROMPT, userQuery.trim(), scope);
                                     if (chat.httpCode == 401 || chat.httpCode == 403) {
                                         return new Result.Failure<List<AiRecommendItem>>(

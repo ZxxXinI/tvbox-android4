@@ -4,6 +4,9 @@
 
 # Gson：保留 DTO 与领域模型字段（按注解与包名双保险）
 -keep class com.tvbox.android44.data.remote.dto.** { *; }
+# Phone model-list wire fields are serialized reflectively and read by JavaScript.
+-keep class com.tvbox.android44.data.remote.AiModelsClient$Catalog { *; }
+-keep class com.tvbox.android44.data.remote.AiModelsClient$Model { *; }
 -keep class com.tvbox.android44.domain.model.** { *; }
 -keep class com.tvbox.android44.data.local.** { *; }
 -keep class com.google.gson.reflect.TypeToken { *; }

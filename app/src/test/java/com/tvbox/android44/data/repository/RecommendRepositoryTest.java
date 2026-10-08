@@ -28,7 +28,7 @@ public class RecommendRepositoryTest {
     @Before public void setUp() throws Exception {
         server = new MockWebServer(); server.start(); worker = Executors.newSingleThreadExecutor();
         settings = new TestSettings() { @Override public AiProvider aiProvider() { return new AiProvider("fixture", "Fixture", server.url("/v1").toString(), "model"); } };
-        settings.setAiApiKey("unit-test-key"); settings.setAiModel("model");
+        settings.setAiProvider("deepseek"); settings.setAiApiKey("unit-test-key"); settings.setAiModel("model");
         repository = new RecommendRepository(worker, settings, new AiClient(new OkHttpClient.Builder().callTimeout(2, TimeUnit.SECONDS).build()));
     }
     @After public void tearDown() throws Exception { worker.shutdownNow(); TvBoxApp.get().executors().shutdown(); server.shutdown(); }

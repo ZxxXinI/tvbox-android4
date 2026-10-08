@@ -42,6 +42,7 @@ public class RecommendFlowTest {
             localSettings = new TestSettings(new ApiLine("local", "测试源", url, false)) {
                 @Override public AiProvider aiProvider() { return new AiProvider("fixture", "Fixture", url, "model"); }
             };
+            localSettings.setAiProvider("deepseek");
             localSettings.setAiApiKey("unit-test-key"); localSettings.setAiModel("fixture-model");
             localMovies = new MovieRepository(executors().network(), executors().sourceRequests());
             aiWorker = Executors.newSingleThreadExecutor(); localRecommend = new RecommendRepository(aiWorker, localSettings);

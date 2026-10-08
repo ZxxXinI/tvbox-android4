@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/settings_scroll"
     android:layout_width="match_parent"
@@ -60,18 +60,10 @@
             android:orientation="horizontal">
 
             <TextView
-                android:id="@+id/settings_api_add"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/add_custom_source" />
-
-            <TextView
                 android:id="@+id/settings_api_manage"
                 style="@style/Widget.Tv.NavButton"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginLeft="14dp"
                 android:text="@string/manage_custom_sources" />
 
             <TextView
@@ -104,19 +96,10 @@
             android:orientation="horizontal">
 
             <TextView
-                android:id="@+id/settings_ai_model"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:ellipsize="end"
-                android:maxLines="1" />
-
-            <TextView
                 android:id="@+id/settings_ai_key"
                 style="@style/Widget.Tv.NavButton"
                 android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginLeft="14dp" />
+                android:layout_height="wrap_content" />
         </LinearLayout>
 
         <TextView

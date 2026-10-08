@@ -22,14 +22,14 @@ android {
         applicationId "com.tvbox.android44"
         minSdk 16          // Android 4.1 / API 16 compatibility baseline
         targetSdk 28       // 侧载版基线
-        versionCode injectedProp('TVBOX_VERSION_CODE', '3').toInteger()
-        versionName injectedProp('TVBOX_VERSION_NAME', '0.0.3')
+        versionCode injectedProp('TVBOX_VERSION_CODE', '4').toInteger()
+        versionName injectedProp('TVBOX_VERSION_NAME', '0.0.4')
         multiDexEnabled true
         vectorDrawables.useSupportLibrary = true
 
         // 外部服务地址均为构建期注入的默认值，运行时可在设置中受控覆盖
         buildConfigField "String", "PLATFORM_LIVE_URL", groovy.json.JsonOutput.toJson(injectedProp('TVBOX_PLATFORM_LIVE_SERVICE_URL', 'http://20.205.10.127:8868'))
-        buildConfigField "String", "OTA_MANIFEST_URL", groovy.json.JsonOutput.toJson(injectedProp('TVBOX_OTA_MANIFEST_URL', ''))
+        buildConfigField "String", "OTA_MANIFEST_URL", groovy.json.JsonOutput.toJson(injectedProp('TVBOX_OTA_MANIFEST_URL', 'https://github.com/ZxxXinI/tvbox-android4/releases/latest/download/update.json'))
         buildConfigField "String", "IPTV_SOURCE_URL", groovy.json.JsonOutput.toJson(injectedProp('TVBOX_IPTV_SOURCE_URL', 'http://20.205.10.127:8787/tvbox/result.txt'))
     }
 
