@@ -556,3 +556,10 @@
 - 稳定latest OTA清单匿名下载HTTP 200，版本号、APK URL、大小、哈希正确；再从清单URL匿名下载APK，和本地/清单哈希相符。v0.0.4原签名安装现可通过OTA升级。
 - 发布版本递增后未重跑测试、Lint或设备验证；播放器专项Debug/Release各86项的先前结果与限制见本分支记录。实体投影、遥控器、系统安装器及观看历史保留仍待用户设备验收。
 - 最终发布、签名、OTA与本地交付证据：[v0.0.5发布记录](docs/22-v0.0.5发布记录.md)。
+
+### 2026-10-11 14:53 OTA APK 下载加速地址
+
+- 用户要求把 v0.0.5 `update.json` 的 `apkUrl` 改用 `https://gh-proxy.org/` 加 GitHub Release APK 完整地址，并要求今后每次发布都添加该前缀。
+- 仅替换 GitHub Release 的 `update.json` 附件；版本、APK、`apkSize`、`apkSha256`及稳定清单URL保持不变。新清单SHA-256为`6d0ddabd3d5ed25d2b33466d2a7ed26bf96676a0e6d57597d9940de4c264cf5a`。
+- 匿名请求latest清单HTTP 200；按代理地址下载APK为2,983,394字节，SHA-256与原APK完全一致；远端附件摘要与本地清单一致。
+- `docs/13`明确今后每个正式版本使用代理形式并核对代理下载字节；持久用户偏好记录在Codex memory。未改APK或应用源码。
