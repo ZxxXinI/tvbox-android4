@@ -528,3 +528,22 @@
 - 最终CI37717662580成功，下载报告核对Linux Debug/Release各337项全部通过；各验证步骤成功。Windows五项存储失败记录保留，模拟测试/公开下载不替代投影的系统安装器OTA实测。
 - 正式本地交付 `dist/TVBox4.1+-v0.0.4.apk` 与发布附件一致。补充README、HANDOFF、docs/13/20及开发日志；源码已推送main，文档提交不改变固定发布源码。
 - 详细证据、链接与设备升级提示见 [v0.0.4 发布记录](docs/20-v0.0.4发布记录.md)。
+
+## 2026-10-11 14:07 播放页遥控器焦点与上下集修复
+
+- 13:54 用户反馈播放页上一集/下一集不可选择，下一集确认也变成暂停。本轮只修复播放控制，交付本地测试包，不提交/推送或修改正式版本及OTA。
+- 根因：`PlayerActivity.dispatchKeyEvent`全局将CENTER/ENTER转为暂停，将左右转为seek，绕过焦点控件；`startPlayback`每次切集又强制聚焦暂停按钮。修复前两项按键流程回归均失败，与现象一致，XML报告备份在`.gradle/playback-remote-fix/before/`。
+- `PlayerActivity.java`：控制层、进度条、错误层分派按键；确认只触发当前焦点，专用媒体键独立暂停；消费抬起、动作长按重复保护，切集/换线保持焦点。
+- `PlayerControllerView.java`：显式按钮行与进度条焦点路径、最近按钮恢复、焦点/按键刷新隐藏倒计时、滚动完整焦点热区；保持普通按钮的触摸属性，避免首击只聚焦不点击。
+- `activity_player.xml`：按钮行改为横向可滚动，窄屏及大字下不裁切不可达控件。
+- `PlayerFlowTest.java`、`PlayerControllerViewTest.java`：完整按下/抬起、实际选集状态、播放意图、边界、快捷键、错误层和窄屏/大字/自动隐藏回归；之前seek冷却测试明确先聚焦进度条。
+- docs/05/07、文档入口、CHANGELOG与分支记录同步新规则，不把旧的全局方向seek描述保留为当前行为。验证与原签名测试包摘要待补录。
+- 临时方式：旧包可使用数字1/3或媒体上一首/下一首切集。详细导航：[播放遥控器修复](docs/21-播放遥控器焦点与切集修复.md)。
+
+### 2026-10-11 14:18 验证与原签名交付
+
+- 最终Debug/Release专项各86项全部通过：PlayerFlowTest68、PlayerControllerViewTest16、VodMediaSourcesTest2。新遥控器回归API16/19/23/28，既有播放/历史/缓冲流程API16/19。两种Lint0 Error/Fatal（63/58 Warning），Debug构建成功。
+- 错误层焦点读取改为其内部findFocus；窄屏测试同时匹配屏幕/窗口宽度，并明确旧Robolectric字形限制。保持普通按钮的触摸属性，6个按钮单击均只激活一次。初次失败与修正原因在分支记录保留。
+- 原证书Release BUILD SUCCESSFUL in58s。实际0.0.4/code4、API16、不可调试，API16 v1/v2有效；与保存的公开v0.0.4比对证书相同。交付 `dist/TVBox4.1+-v0.0.4-player-fix-20261011.apk`，2,983,397字节，SHA-256 `872ef2bf2350b00c9396b3a8d7b78a4495dfb77199984b098cc72410363f947c`。
+- 原OTA URL在编译DEX中保留，原公开APK副本未覆盖；本轮未提交、推送或发布，code4需手动覆盖安装。全量Windows回归未重跑，之前五项存储失败不抹去。没有把自动化写成投影/实体遥控器实测。
+- HANDOFF与分支记录补齐包链接、文件用途、哈希、验证范围及无需ADB的验收步骤。

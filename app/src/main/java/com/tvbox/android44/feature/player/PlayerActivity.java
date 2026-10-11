@@ -436,6 +436,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     }
 
     private void startPlayback() {
+        boolean controllerWasShown = controller.isShown();
         releasePlayer();
         if (currentEpisode == null) {
             showError("播放地址无效");
@@ -467,7 +468,8 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                         + " · 第" + (displayEpisode + 1) + "集 " + currentEpisode.title);
         controller.setSpeedLabel(AppConstants.SPEED_SEQUENCE[speedIndex]);
         controller.show();
-        controller.focusPlayToggle();
+        if (controllerWasShown) controller.focusCurrentControl();
+        else controller.focusPlayToggle();
         handler.removeMessages(MSG_UPDATE_TIME);
         handler.sendEmptyMessage(MSG_UPDATE_TIME);
     }
@@ -743,58 +745,113 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            switch (event.getKeyCode()) {
-                case KeyEvent.KEYCODE_DPAD_CENTER:
-                case KeyEvent.KEYCODE_ENTER:
-                case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+        int code = event.getKeyCode();
+        if (controller == null || !isPlayerRemoteKey(code)) return super.dispatchKeyEvent(event);
+        // Own both halves of a remote press. A late key-up must not click a new focus target.
+        if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+        if (event.getRepeatCount() > 0 && !isDirectionKey(code)) return true;
+        if (errorOverlay.getVisibility() == View.VISIBLE && (isConfirmKey(code) || isDirectionKey(code))) {
+            View retry = findViewById(R.id.player_error_retry);
+            View back = findViewById(R.id.player_error_back);
+            View focused = errorOverlay.findFocus();
+            if (focused != retry && focused != back) { retry.requestFocus(); focused = retry; }
+            if (isConfirmKey(code)) focused.performClick();
+            else if (code == KeyEvent.KEYCODE_DPAD_LEFT) retry.requestFocus();
+            else if (code == KeyEvent.KEYCODE_DPAD_RIGHT) back.requestFocus();
+            return true;
+        }
+        switch (code) {
+            case KeyEvent.KEYCODE_DPAD_CENTER:
+            case KeyEvent.KEYCODE_ENTER:
+            case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                if (controller.isShown()) controller.activateFocusedControl();
+                else {
                     togglePlayPause();
+                    controller.show();
+                    controller.focusPlayToggle();
+                }
+                return true;
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+                togglePlayPause();
+                controller.show();
+                controller.focusCurrentControl();
+                return true;
+            case KeyEvent.KEYCODE_DPAD_LEFT:
+            case KeyEvent.KEYCODE_DPAD_RIGHT:
+            case KeyEvent.KEYCODE_DPAD_UP:
+            case KeyEvent.KEYCODE_DPAD_DOWN:
+                if (!controller.isShown()) {
+                    controller.show();
+                    controller.focusPlayToggle();
+                } else if (controller.isSeekFocused()
+                        && (code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                    seekBy(code == KeyEvent.KEYCODE_DPAD_LEFT
+                            ? -AppConstants.SEEK_STEP_MS : AppConstants.SEEK_STEP_MS);
+                    controller.scheduleHide();
+                } else {
+                    int direction = code == KeyEvent.KEYCODE_DPAD_LEFT ? View.FOCUS_LEFT
+                            : code == KeyEvent.KEYCODE_DPAD_RIGHT ? View.FOCUS_RIGHT
+                            : code == KeyEvent.KEYCODE_DPAD_UP ? View.FOCUS_UP : View.FOCUS_DOWN;
+                    controller.moveFocus(direction);
+                }
+                return true;
+            case KeyEvent.KEYCODE_1:
+            case KeyEvent.KEYCODE_NUMPAD_1:
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+                switchEpisode(episodeIndex - 1);
+                return true;
+            case KeyEvent.KEYCODE_3:
+            case KeyEvent.KEYCODE_NUMPAD_3:
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+                switchEpisode(episodeIndex + 1);
+                return true;
+            case KeyEvent.KEYCODE_MENU:
+                cycleSpeed();
+                return true;
+            case KeyEvent.KEYCODE_BACK:
+                if (errorOverlay.getVisibility() == View.VISIBLE) {
+                    errorOverlay.setVisibility(View.GONE);
+                    if (controller.isShown()) controller.focusCurrentControl();
                     return true;
-                case KeyEvent.KEYCODE_DPAD_LEFT:
-                    if (controller.isShown()) {
-                        seekBy(-AppConstants.SEEK_STEP_MS);
-                    } else {
-                        controller.show();
-                        controller.focusPlayToggle();
-                    }
+                }
+                if (controller.isShown()) {
+                    controller.hide();
                     return true;
-                case KeyEvent.KEYCODE_DPAD_RIGHT:
-                    if (controller.isShown()) {
-                        seekBy(AppConstants.SEEK_STEP_MS);
-                    } else {
-                        controller.show();
-                        controller.focusPlayToggle();
-                    }
-                    return true;
-                case KeyEvent.KEYCODE_1:
-                case KeyEvent.KEYCODE_NUMPAD_1:
-                case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
-                    switchEpisode(episodeIndex - 1);
-                    return true;
-                case KeyEvent.KEYCODE_3:
-                case KeyEvent.KEYCODE_NUMPAD_3:
-                case KeyEvent.KEYCODE_MEDIA_NEXT:
-                    switchEpisode(episodeIndex + 1);
-                    return true;
-                case KeyEvent.KEYCODE_MENU:
-                    cycleSpeed();
-                    return true;
-                case KeyEvent.KEYCODE_BACK:
-                    if (errorOverlay.getVisibility() == View.VISIBLE) {
-                        errorOverlay.setVisibility(View.GONE);
-                        return true;
-                    }
-                    if (controller.isShown()) {
-                        controller.hide();
-                        return true;
-                    }
-                    finish();
-                    return true;
-                default:
-                    break;
-            }
+                }
+                finish();
+                return true;
+            default:
+                break;
         }
         return super.dispatchKeyEvent(event);
+    }
+
+    private static boolean isConfirmKey(int code) {
+        return code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER
+                || code == KeyEvent.KEYCODE_NUMPAD_ENTER;
+    }
+
+    private static boolean isDirectionKey(int code) {
+        return code == KeyEvent.KEYCODE_DPAD_LEFT || code == KeyEvent.KEYCODE_DPAD_RIGHT
+                || code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN;
+    }
+
+    private static boolean isPlayerRemoteKey(int code) {
+        if (isConfirmKey(code) || isDirectionKey(code)) return true;
+        switch (code) {
+            case KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE:
+            case KeyEvent.KEYCODE_1:
+            case KeyEvent.KEYCODE_NUMPAD_1:
+            case KeyEvent.KEYCODE_MEDIA_PREVIOUS:
+            case KeyEvent.KEYCODE_3:
+            case KeyEvent.KEYCODE_NUMPAD_3:
+            case KeyEvent.KEYCODE_MEDIA_NEXT:
+            case KeyEvent.KEYCODE_MENU:
+            case KeyEvent.KEYCODE_BACK:
+                return true;
+            default:
+                return false;
+        }
     }
 
     // ===== 健康与历史 =====

@@ -1,12 +1,12 @@
 package com.tvbox.android44.feature.player;
 
+import android.graphics.Rect;
 import android.os.Handler;
 import android.view.View;
 import android.widget.SeekBar;
 import android.widget.TextView;
 
 import com.tvbox.android44.R;
-import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 
 /**
@@ -38,6 +38,8 @@ public class PlayerControllerView {
     private final SeekBar seek;
     private final TextView toggle;
     private final TextView speed;
+    private final View[] actions;
+    private View lastAction;
     private final Listener listener;
     private final Handler main = new Handler();
     private boolean shown;
@@ -68,6 +70,20 @@ public class PlayerControllerView {
         View next = rootView.findViewById(R.id.player_next);
         View changeLine = rootView.findViewById(R.id.player_change_line);
         View exit = rootView.findViewById(R.id.player_exit);
+        actions = new View[]{prev, toggle, next, speed, changeLine, exit};
+        lastAction = toggle;
+        for (final View action : actions) {
+            action.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+                @Override public void onFocusChange(View view, boolean focused) {
+                    if (focused) { lastAction = action; scheduleHide(); }
+                }
+            });
+        }
+        seek.setOnFocusChangeListener(new View.OnFocusChangeListener() {
+            @Override public void onFocusChange(View view, boolean focused) {
+                if (focused) scheduleHide();
+            }
+        });
 
         prev.setOnClickListener(v -> listener.onPrevEpisode());
         toggle.setOnClickListener(v -> listener.onTogglePlay());
@@ -168,7 +184,53 @@ public class PlayerControllerView {
 
     /** 弹窗/控制层打开时把焦点放入控制层。 */
     public void focusPlayToggle() {
-        toggle.requestFocus();
+        focus(toggle);
+    }
+
+    /** Keep the selected action when the player is replaced for another episode/line. */
+    public void focusCurrentControl() {
+        if (root.findFocus() == null) focus(lastAction);
+    }
+
+    public boolean isSeekFocused() {
+        return shown && seek.hasFocus();
+    }
+
+    /** TV focus order is explicit; left/right must not become a global seek action. */
+    public void moveFocus(int direction) {
+        View current = root.findFocus();
+        if (current == null) { focus(lastAction); return; }
+        if (direction == View.FOCUS_UP) {
+            focus(seek);
+        } else if (direction == View.FOCUS_DOWN) {
+            if (current == seek) focus(lastAction);
+        } else if (current != seek) {
+            for (int i = 0; i < actions.length; i++) {
+                if (actions[i] == current) {
+                    int next = Math.max(0, Math.min(actions.length - 1,
+                            i + (direction == View.FOCUS_LEFT ? -1 : 1)));
+                    focus(actions[next]);
+                    break;
+                }
+            }
+        }
+        scheduleHide();
+    }
+
+    public void activateFocusedControl() {
+        scheduleHide();
+        View current = root.findFocus();
+        if (current == seek) return;
+        for (View action : actions) {
+            if (current == action) { action.performClick(); return; }
+        }
+        focusPlayToggle();
+        toggle.performClick();
+    }
+
+    private void focus(View control) {
+        control.requestFocus();
+        control.requestRectangleOnScreen(new Rect(0, 0, control.getWidth(), control.getHeight()), true);
     }
 
     public void scheduleHide() {

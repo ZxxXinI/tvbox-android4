@@ -158,6 +158,181 @@ public class PlayerFlowTest {
     private String line(TestPlayerActivity player) { return ReflectionHelpers.getField(player, "lineId"); }
     private void key(TestPlayerActivity player, int code) { player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code)); }
 
+    private void press(TestPlayerActivity player, int code) {
+        player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, code));
+        player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, code));
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void confirmActivatesFocusedEpisodeInsteadOfPausing() throws Exception {
+        TestPlayerActivity player = player(); player.current().state(Player.STATE_READY);
+        assertTrue(player.findViewById(R.id.player_next).requestFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(1, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertEquals(2, player.players.size()); assertTrue(player.current().playWhenReady);
+        assertTrue(player.findViewById(R.id.player_next).hasFocus());
+        assertTrue(player.findViewById(R.id.player_prev).requestFocus());
+        press(player, KeyEvent.KEYCODE_ENTER);
+        assertEquals(0, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertTrue(player.current().playWhenReady);
+        assertTrue(player.findViewById(R.id.player_prev).hasFocus());
+        player.findViewById(R.id.player_next).requestFocus();
+        press(player, KeyEvent.KEYCODE_NUMPAD_ENTER);
+        assertEquals(1, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertTrue(player.current().playWhenReady);
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void directionsReachEveryButtonWithoutSeekingOrPausing() throws Exception {
+        TestPlayerActivity player = player(); FakePlayer first = player.current();
+        first.state(Player.STATE_READY); first.position = 20000;
+        assertTrue(player.findViewById(R.id.player_toggle).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_LEFT);
+        assertTrue(player.findViewById(R.id.player_prev).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_LEFT);
+        assertTrue(player.findViewById(R.id.player_prev).hasFocus());
+        for (int id : new int[]{R.id.player_toggle, R.id.player_next, R.id.player_speed,
+                R.id.player_change_line, R.id.player_exit}) {
+            press(player, KeyEvent.KEYCODE_DPAD_RIGHT);
+            assertTrue("unreachable player action " + id, player.findViewById(id).hasFocus());
+        }
+        press(player, KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertTrue(player.findViewById(R.id.player_exit).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_UP);
+        assertTrue(player.findViewById(R.id.player_seek).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_DOWN);
+        assertTrue(player.findViewById(R.id.player_exit).hasFocus());
+        assertEquals(20000, first.position); assertTrue(first.playWhenReady);
+        assertEquals(1, player.players.size());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void confirmationRepeatAndReleaseDoNotSwitchAnotherEpisode() throws Exception {
+        TestPlayerActivity player = player(); player.findViewById(R.id.player_next).requestFocus();
+        player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER));
+        player.dispatchKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_DPAD_CENTER, 1));
+        player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_DPAD_CENTER));
+        assertEquals(1, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertEquals(2, player.players.size()); assertTrue(player.current().playWhenReady);
+        assertTrue(player.findViewById(R.id.player_next).hasFocus());
+        player.finish();
+        WatchHistoryItem result = (WatchHistoryItem) Shadows.shadowOf(player).getResultIntent()
+                .getSerializableExtra(PlayerActivity.EXTRA_HISTORY_ITEM);
+        assertEquals(1, result.episodeIndex); assertEquals("第2集", result.episodeTitle);
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void focusedPauseAndDedicatedMediaKeyHaveDistinctActions() throws Exception {
+        TestPlayerActivity player = player(); FakePlayer first = player.current();
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER); assertFalse(first.playWhenReady);
+        press(player, KeyEvent.KEYCODE_ENTER); assertTrue(first.playWhenReady);
+        player.findViewById(R.id.player_next).requestFocus();
+        player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
+        player.dispatchKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, 2));
+        player.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE));
+        assertFalse(first.playWhenReady); assertEquals(1, player.players.size());
+        assertEquals(0, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertTrue(player.findViewById(R.id.player_next).hasFocus());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void onlyTheFocusedProgressBarSeeksByTenSeconds() throws Exception {
+        TestPlayerActivity player = player(); FakePlayer first = player.current();
+        first.position = 25000;
+        press(player, KeyEvent.KEYCODE_DPAD_UP);
+        assertTrue(player.findViewById(R.id.player_seek).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_RIGHT); assertEquals(35000, first.position);
+        press(player, KeyEvent.KEYCODE_DPAD_LEFT); assertEquals(25000, first.position);
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER); assertTrue(first.playWhenReady);
+        press(player, KeyEvent.KEYCODE_DPAD_DOWN);
+        assertTrue(player.findViewById(R.id.player_toggle).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertTrue(player.findViewById(R.id.player_next).hasFocus());
+        assertEquals(25000, first.position); assertEquals(1, player.players.size());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void directionReopensHiddenControlsAndBackReleaseDoesNotExit() throws Exception {
+        TestPlayerActivity player = player(); FakePlayer first = player.current(); first.position = 25000;
+        press(player, KeyEvent.KEYCODE_BACK);
+        assertEquals(View.GONE, player.findViewById(R.id.player_controller).getVisibility());
+        assertFalse(player.isFinishing());
+        press(player, KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertEquals(View.VISIBLE, player.findViewById(R.id.player_controller).getVisibility());
+        assertTrue(player.findViewById(R.id.player_toggle).hasFocus());
+        assertEquals(25000, first.position); assertTrue(first.playWhenReady);
+        press(player, KeyEvent.KEYCODE_BACK); assertFalse(player.isFinishing());
+        press(player, KeyEvent.KEYCODE_BACK); assertTrue(player.isFinishing());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void firstAndLastEpisodeButtonsDoNotPauseOrWrap() throws Exception {
+        TestPlayerActivity player = player(); player.findViewById(R.id.player_prev).requestFocus();
+        press(player, KeyEvent.KEYCODE_ENTER);
+        assertEquals(0, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertTrue(player.current().playWhenReady); assertEquals(1, player.players.size());
+        assertEquals(app.getString(R.string.player_first_episode),
+                ((TextView) player.findViewById(R.id.player_hint)).getText().toString());
+        player.findViewById(R.id.player_next).requestFocus();
+        press(player, KeyEvent.KEYCODE_ENTER); press(player, KeyEvent.KEYCODE_ENTER);
+        assertEquals(2, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        int count = player.players.size(); press(player, KeyEvent.KEYCODE_ENTER);
+        assertEquals(count, player.players.size()); assertTrue(player.current().playWhenReady);
+        assertEquals(app.getString(R.string.player_last_episode),
+                ((TextView) player.findViewById(R.id.player_hint)).getText().toString());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void errorButtonsOwnConfirmAndKeepFocusInsideTheirOverlay() throws Exception {
+        app.settings().setAutoLineSwitch(false);
+        TestPlayerActivity player = player();
+        player.onPlayerError(new PlaybackException("HTTP", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS));
+        assertTrue(player.findViewById(R.id.player_error_retry).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_RIGHT);
+        assertTrue(player.findViewById(R.id.player_error_back).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_DOWN);
+        assertTrue(player.findViewById(R.id.player_error_back).hasFocus());
+        press(player, KeyEvent.KEYCODE_DPAD_LEFT);
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(2, player.players.size()); assertTrue(player.current().playWhenReady);
+        assertEquals(View.GONE, player.findViewById(R.id.player_error).getVisibility());
+        player.onPlayerError(new PlaybackException("HTTP", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS));
+        press(player, KeyEvent.KEYCODE_DPAD_RIGHT); press(player, KeyEvent.KEYCODE_ENTER);
+        assertTrue(player.isFinishing());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void numericMediaAndMenuShortcutsStaySinglePressActions() throws Exception {
+        TestPlayerActivity player = player();
+        press(player, KeyEvent.KEYCODE_NUMPAD_3);
+        assertEquals(1, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        player.dispatchKeyEvent(new KeyEvent(0, 0, KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_NUMPAD_3, 1));
+        assertEquals(1, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        press(player, KeyEvent.KEYCODE_MEDIA_PREVIOUS);
+        assertEquals(0, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        press(player, KeyEvent.KEYCODE_3); press(player, KeyEvent.KEYCODE_MEDIA_NEXT);
+        assertEquals(2, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        press(player, KeyEvent.KEYCODE_1); press(player, KeyEvent.KEYCODE_NUMPAD_1);
+        assertEquals(0, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        press(player, KeyEvent.KEYCODE_MENU);
+        assertEquals(1.25f, player.current().parameters.speed, 0.001f);
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void focusedSpeedLineAndExitExecuteTheirOwnActions() throws Exception {
+        TestPlayerActivity player = player(); player.findViewById(R.id.player_speed).requestFocus();
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(1.25f, player.current().parameters.speed, 0.001f);
+        assertTrue(player.current().playWhenReady); assertEquals(1, player.players.size());
+        player.findViewById(R.id.player_change_line).requestFocus();
+        press(player, KeyEvent.KEYCODE_ENTER);
+        assertTrue(line(player).endsWith("lineB")); assertEquals(2, player.players.size());
+        assertTrue(player.findViewById(R.id.player_change_line).hasFocus());
+        assertTrue(player.current().playWhenReady);
+        player.findViewById(R.id.player_exit).requestFocus();
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER); assertTrue(player.isFinishing());
+    }
+
     @Test public void continuousBufferingSwitchesDespiteIsPlayingFalse() throws Exception {
         TestPlayerActivity player = player(); FakePlayer first = player.current();
         first.state(Player.STATE_READY); first.state(Player.STATE_BUFFERING); player.onIsPlayingChanged(false);
@@ -177,6 +352,7 @@ public class PlayerFlowTest {
         assertEquals(1, player.players.size());
         player.current().state(Player.STATE_READY); player.current().proxy.setPlayWhenReady(true);
         player.current().state(Player.STATE_BUFFERING); player.time += 4000;
+        player.findViewById(R.id.player_seek).requestFocus();
         key(player, KeyEvent.KEYCODE_DPAD_RIGHT); player.tick(2000); assertEquals(1, player.players.size());
         player.current().state(Player.STATE_READY); app.settings().setAutoLineSwitch(false);
         player.current().state(Player.STATE_BUFFERING); player.tick(6000); assertEquals(1, player.players.size());

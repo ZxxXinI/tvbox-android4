@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/player_surface_root"
     android:layout_width="match_parent"
@@ -75,60 +75,69 @@
                 android:textSize="13sp" />
         </LinearLayout>
 
-        <LinearLayout
+        <HorizontalScrollView
+            android:id="@+id/player_action_scroll"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginTop="8dp"
-            android:gravity="center"
-            android:orientation="horizontal">
+            android:fillViewport="true"
+            android:focusable="false"
+            android:scrollbars="none">
 
-            <TextView
-                android:id="@+id/player_prev"
-                style="@style/Widget.Tv.NavButton"
+            <LinearLayout
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginRight="14dp"
-                android:text="@string/previous_episode" />
+                android:gravity="center"
+                android:orientation="horizontal">
 
-            <TextView
-                android:id="@+id/player_toggle"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginRight="14dp"
-                android:text="@string/pause" />
+                <TextView
+                    android:id="@+id/player_prev"
+                    style="@style/Widget.Tv.NavButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="14dp"
+                    android:text="@string/previous_episode" />
 
-            <TextView
-                android:id="@+id/player_next"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginRight="14dp"
-                android:text="@string/next_episode" />
+                <TextView
+                    android:id="@+id/player_toggle"
+                    style="@style/Widget.Tv.NavButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="14dp"
+                    android:text="@string/pause" />
 
-            <TextView
-                android:id="@+id/player_speed"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginRight="14dp"
-                android:text="@string/speed_default" />
+                <TextView
+                    android:id="@+id/player_next"
+                    style="@style/Widget.Tv.NavButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="14dp"
+                    android:text="@string/next_episode" />
 
-            <TextView
-                android:id="@+id/player_change_line"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginRight="14dp"
-                android:text="@string/switch_line" />
+                <TextView
+                    android:id="@+id/player_speed"
+                    style="@style/Widget.Tv.NavButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="14dp"
+                    android:text="@string/speed_default" />
 
-            <TextView
-                android:id="@+id/player_exit"
-                style="@style/Widget.Tv.NavButton"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="@string/exit" />
-        </LinearLayout>
+                <TextView
+                    android:id="@+id/player_change_line"
+                    style="@style/Widget.Tv.NavButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginRight="14dp"
+                    android:text="@string/switch_line" />
+
+                <TextView
+                    android:id="@+id/player_exit"
+                    style="@style/Widget.Tv.NavButton"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="@string/exit" />
+            </LinearLayout>
+        </HorizontalScrollView>
     </LinearLayout>
 
     <!-- 顶部临时提示 -->
