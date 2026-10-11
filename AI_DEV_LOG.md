@@ -579,6 +579,7 @@
 - 用户确认保留 v0.0.5，并以 v0.0.6/code6 发布，允许现有 code5 用户经 OTA 获取修复。`app/build.gradle` 默认版本改为 0.0.6/code6；安装 Intent 改用 `ACTION_INSTALL_PACKAGE`；无安装权限时可保存已校验 APK 到 `Download/TVBox/`。
 - 源码提交 `168f870`；`main` 与标签 `v0.0.6` 已推送，标签指向 `469d1150e2a90b3658423dee0a6eac094dea783a`。GitHub Release 已公开并设为 Latest，v0.0.5 保持不变，上传 5 个发布材料。
 - 自动验证：OTA 专项 18 项通过；Release Lint 和 Release 构建通过。全量 Debug 测试运行 396 项、5 项既有 Windows 存储用例失败（HealthStore 2、HistoryStore 3）；保留失败记录，不宣称全量通过。
+- GitHub Actions 源码提交运行 `38121905631` 全部通过，覆盖测试/Lint/Debug与Release构建、签名连续性、AI配置及API16发布材料检查；仅有Node.js 20与setup-java@v4弃用警告。
 - 最终 APK `2,988,236` 字节，SHA-256 `b7473b81379bc8b5cf73a8352095f1dc72ebe7a8ca41a3d8d3a374af59d15c92`；minSdk16，v1/v2签名有效，证书与 v0.0.5 相同。发布材料脚本确认 `previousVersionCode=5` 且可覆盖升级。
 - 稳定 latest 清单匿名 HTTP 200，`0.0.6/code6` 与加速 APK URL 正确；经 `gh-proxy.org` 下载返回 HTTP 200，大小与 SHA-256 均与本地及清单一致。用户要求继续自行进行设备验收，本轮没有进行 ADB 安装器/保存流程测试。
 - 本地交付：[dist/TVBox4.1+-v0.0.6.apk](dist/TVBox4.1%2B-v0.0.6.apk)。完整证据和未完成验收项见 [v0.0.6 发布记录](docs/24-v0.0.6-OTA安装修复发布.md)。
