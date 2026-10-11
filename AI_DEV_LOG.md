@@ -547,3 +547,12 @@
 - 原证书Release BUILD SUCCESSFUL in58s。实际0.0.4/code4、API16、不可调试，API16 v1/v2有效；与保存的公开v0.0.4比对证书相同。交付 `dist/TVBox4.1+-v0.0.4-player-fix-20261011.apk`，2,983,397字节，SHA-256 `872ef2bf2350b00c9396b3a8d7b78a4495dfb77199984b098cc72410363f947c`。
 - 原OTA URL在编译DEX中保留，原公开APK副本未覆盖；本轮未提交、推送或发布，code4需手动覆盖安装。全量Windows回归未重跑，之前五项存储失败不抹去。没有把自动化写成投影/实体遥控器实测。
 - HANDOFF与分支记录补齐包链接、文件用途、哈希、验证范围及无需ADB的验收步骤。
+
+### 2026-10-11 v0.0.5 正式发布与 OTA 核验
+
+- 用户授权发布播放器遥控器修复。源码和测试提交 `7016abe1f3799c19a03e70b0f4b41bc53b9f6e98`，标签 `v0.0.5` 已推送，GitHub Release已公开并设为Latest，含APK、OTA清单、APK信息、签名报告与SHA256清单共5项。
+- 原签名 `assembleRelease` 成功。成品为TVBox4.1+、com.tvbox.android44、0.0.5/code5、minSdk16/targetSdk28；v1/v2签名有效，证书SHA-256与v0.0.4相同。Gradle提示本机`local.properties` SDK目录不存在，但通过当前SDK环境完整构建；未更改本机SDK设置。
+- 发布APK 2,983,394字节，SHA-256 `2e95d01675b3abf69071e50233366cbaaf9584012a78d21be371d941873104a1`，本地交付 `dist/TVBox4.1+-v0.0.5.apk` 一致。GitHub五个附件均已按实际大小与SHA-256逐项核验。
+- 稳定latest OTA清单匿名下载HTTP 200，版本号、APK URL、大小、哈希正确；再从清单URL匿名下载APK，和本地/清单哈希相符。v0.0.4原签名安装现可通过OTA升级。
+- 发布版本递增后未重跑测试、Lint或设备验证；播放器专项Debug/Release各86项的先前结果与限制见本分支记录。实体投影、遥控器、系统安装器及观看历史保留仍待用户设备验收。
+- 最终发布、签名、OTA与本地交付证据：[v0.0.5发布记录](docs/22-v0.0.5发布记录.md)。
