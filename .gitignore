@@ -10,3 +10,4 @@ signing/
 dist/*.apk
 __pycache__/
 dist/release-validation/
+dist/release-v*/

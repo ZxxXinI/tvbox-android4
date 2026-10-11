@@ -33,6 +33,14 @@
     <string name="startup_update_message">发现新版本 v%1$s，是否前往设置查看更新内容？</string>
     <string name="check_update">检查更新</string>
     <string name="install_update">安装更新</string>
+    <string name="install_permission_required_title">没有安装权限</string>
+    <string name="install_permission_required_message">此应用尚未获得“安装未知应用”权限。你可以先保存安装包到 Download/TVBox，再用文件管理器手动安装；也可以去设置授权后回到这里点击“安装更新”。</string>
+    <string name="save_apk">保存</string>
+    <string name="open_install_permission_settings">去授权</string>
+    <string name="save_apk_storage_permission_denied">未授予存储权限，安装包仍保留在应用内；授权后可重新保存。</string>
+    <string name="saving_apk">正在保存到 Download/TVBox…</string>
+    <string name="saved_apk_to_downloads">安装包已保存：%1$s</string>
+    <string name="save_apk_failed">保存失败：%1$s</string>
     <string name="qr_no_lan">未找到可用的局域网地址，请连接 Wi-Fi 或有线网络后重试</string>
     <string name="qr_choose_network">选择手机所在的局域网地址</string>
     <string name="qr_expired">配置会话已过期，请重新生成二维码</string>

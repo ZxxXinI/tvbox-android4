@@ -2,6 +2,7 @@ package com.tvbox.android44.data.repository;
 
 import android.content.Context;
 import android.content.Intent;
+import android.os.Environment;
 import android.os.Build;
 import android.os.Looper;
 import com.tvbox.android44.app.TvBoxApp;
@@ -19,6 +20,7 @@ import org.junit.runner.RunWith;
 import org.robolectric.RobolectricTestRunner;
 import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
+import org.robolectric.shadows.ShadowEnvironment;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.LooperMode;
 import java.io.*;
@@ -38,6 +40,7 @@ public class UpdateRepositoryTest {
 
     @Before public void setUp() throws Exception {
         context = RuntimeEnvironment.getApplication();
+        ShadowEnvironment.setExternalStorageState(Environment.MEDIA_MOUNTED);
         server = new MockWebServer();
         server.start();
         executor = Executors.newSingleThreadExecutor();
@@ -59,7 +62,7 @@ public class UpdateRepositoryTest {
         return u;
     }
 
-    @Test public void validManifestAndDownloadProduceContentInstallIntent() throws Exception {
+    @Test public void validManifestAndDownloadProduceInstallerIntent() throws Exception {
         AppUpdate u = update();
         server.enqueue(new MockResponse().setBody("{\"versionCode\":" + u.versionCode + ",\"versionName\":\"0.0.2\",\"apkUrl\":\""
                 + u.apkUrl + "\",\"apkSha256\":\"" + u.apkSha256 + "\",\"apkSize\":" + u.apkSize + "}"));
@@ -78,6 +81,7 @@ public class UpdateRepositoryTest {
         AsyncTest.await(downloaded);
         assertTrue(result.get().isSuccess());
         Intent install = repo.buildInstallIntent(result.get().data());
+        assertEquals(Intent.ACTION_INSTALL_PACKAGE, install.getAction());
         assertEquals("content", install.getData().getScheme());
         assertEquals("application/vnd.android-package-archive", install.getType());
         assertTrue((install.getFlags() & Intent.FLAG_GRANT_READ_URI_PERMISSION) != 0);
@@ -90,6 +94,43 @@ public class UpdateRepositoryTest {
         } else {
             assertEquals(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
                     repo.buildInstallsPermissionIntent().getAction());
+        }
+    }
+
+    @Test public void saveApkToDownloadsCopiesVerifiedPackageWithoutRemovingSource() throws Exception {
+        File source = File.createTempFile("tvbox-save-test-", ".apk", context.getCacheDir());
+        FileOutputStream output = new FileOutputStream(source);
+        output.write(payload);
+        output.close();
+        File saved = null;
+        try {
+            String savedPath = repo.saveApkToDownloads(source);
+            assertTrue(savedPath.startsWith(Environment.DIRECTORY_DOWNLOADS + "/TVBox/"));
+            String savedName = savedPath.substring(savedPath.lastIndexOf('/') + 1);
+            File directory = new File(Environment.getExternalStoragePublicDirectory(
+                    Environment.DIRECTORY_DOWNLOADS), "TVBox");
+            saved = new File(directory, savedName);
+            assertTrue(saved.isFile());
+            assertArrayEquals(payload, readAll(saved));
+            assertArrayEquals(payload, readAll(source));
+        } finally {
+            if (saved != null && saved.exists()) saved.delete();
+            if (source.exists()) source.delete();
+        }
+    }
+
+    private byte[] readAll(File file) throws IOException {
+        FileInputStream input = new FileInputStream(file);
+        try {
+            ByteArrayOutputStream output = new ByteArrayOutputStream();
+            byte[] buffer = new byte[256];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+            }
+            return output.toByteArray();
+        } finally {
+            input.close();
         }
     }
 

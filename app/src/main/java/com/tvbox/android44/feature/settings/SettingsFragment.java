@@ -1,10 +1,13 @@
 package com.tvbox.android44.feature.settings;
 
 import android.app.Activity;
+import android.Manifest;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.os.Bundle;
+import android.os.Build;
 import android.text.format.Formatter;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -18,6 +21,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import com.tvbox.android44.BuildConfig;
@@ -53,6 +57,8 @@ import java.util.List;
  */
 public class SettingsFragment extends Fragment {
 
+    private static final int REQUEST_SAVE_APK_STORAGE = 4107;
+
     private TextView btnTheme;
     private TextView btnFont;
     private TextView btnApi;
@@ -74,6 +80,7 @@ public class SettingsFragment extends Fragment {
     private UpdateRepository.CheckHandle updateHandle;
     private File downloadedApk;
     private boolean downloading;
+    private boolean savingApk;
     private AppUpdate pendingStartupUpdate;
     private int viewGeneration;
 
@@ -609,23 +616,7 @@ public class SettingsFragment extends Fragment {
         }
         UpdateRepository updates = TvBoxApp.get().updates();
         if (!updates.canRequestInstalls()) {
-            TvDialogs.confirm(getActivity(), "需要安装权限",
-                    "Android 8.0 及以上需要授予「安装未知应用」权限。\n"
-                            + "去系统设置授予权限后，回到这里点击「安装更新」。",
-                    new TvDialogs.ConfirmListener() {
-                        @Override
-                        public void onConfirm() {
-                            Intent intent = TvBoxApp.get().updates()
-                                    .buildInstallsPermissionIntent();
-                            if (intent != null) {
-                                try {
-                                    startActivity(intent);
-                                } catch (ActivityNotFoundException e) {
-                                    toast("无法打开系统设置，请手动前往应用详情授权");
-                                }
-                            }
-                        }
-                    });
+            showInstallPermissionOptions(updates);
             return;
         }
         try {
@@ -635,6 +626,111 @@ public class SettingsFragment extends Fragment {
         } catch (SecurityException e) {
             toast("系统拒绝安装，请检查安装权限");
         }
+    }
+
+    private void showInstallPermissionOptions(final UpdateRepository updates) {
+        AlertDialog dialog = new AlertDialog.Builder(getActivity(), R.style.TvDialog)
+                .setTitle(R.string.install_permission_required_title)
+                .setMessage(R.string.install_permission_required_message)
+                .setPositiveButton(R.string.save_apk, (d, which) -> saveDownloadedApk())
+                .setNeutralButton(R.string.open_install_permission_settings,
+                        (d, which) -> openInstallPermissionSettings(updates))
+                .setNegativeButton(R.string.cancel, null)
+                .create();
+        dialog.show();
+        if (dialog.getButton(AlertDialog.BUTTON_POSITIVE) != null) {
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).requestFocus();
+        }
+    }
+
+    private void openInstallPermissionSettings(UpdateRepository updates) {
+        Intent intent = updates.buildInstallsPermissionIntent();
+        if (intent == null) {
+            return;
+        }
+        try {
+            startActivity(intent);
+        } catch (ActivityNotFoundException e) {
+            toast("无法打开系统设置，请手动前往应用详情授权");
+        }
+    }
+
+    private void saveDownloadedApk() {
+        if (!isAdded() || getContext() == null) {
+            return;
+        }
+        if (downloadedApk == null || !downloadedApk.isFile()) {
+            toast("安装包不存在，请重新检查更新");
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                && Build.VERSION.SDK_INT < Build.VERSION_CODES.Q
+                && ContextCompat.checkSelfPermission(getContext(),
+                Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.WRITE_EXTERNAL_STORAGE},
+                    REQUEST_SAVE_APK_STORAGE);
+            return;
+        }
+        saveDownloadedApkInBackground();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions,
+                                           @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQUEST_SAVE_APK_STORAGE) {
+            return;
+        }
+        if (!isAdded() || getView() == null) {
+            return;
+        }
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            saveDownloadedApkInBackground();
+        } else {
+            toast(getString(R.string.save_apk_storage_permission_denied));
+        }
+    }
+
+    private void saveDownloadedApkInBackground() {
+        if (savingApk || downloadedApk == null || !downloadedApk.isFile()) {
+            return;
+        }
+        savingApk = true;
+        final File apk = downloadedApk;
+        final int generation = viewGeneration;
+        btnUpdateAction.setEnabled(false);
+        setOtaStatus(getString(R.string.saving_apk), true);
+        TvBoxApp.get().executors().disk().execute(new Runnable() {
+            @Override
+            public void run() {
+                String savedPath = null;
+                String failure = null;
+                try {
+                    savedPath = TvBoxApp.get().updates().saveApkToDownloads(apk);
+                } catch (Exception e) {
+                    failure = e.getMessage() == null ? "未知错误" : e.getMessage();
+                }
+                final String resultPath = savedPath;
+                final String error = failure;
+                TvBoxApp.get().executors().main(new Runnable() {
+                    @Override
+                    public void run() {
+                        savingApk = false;
+                        if (!isAdded() || getView() == null || generation != viewGeneration) {
+                            return;
+                        }
+                        btnUpdateAction.setEnabled(true);
+                        if (error != null) {
+                            setOtaStatus(getString(R.string.save_apk_failed, error), false);
+                            toast("保存安装包失败");
+                            return;
+                        }
+                        setOtaStatus(getString(R.string.saved_apk_to_downloads, resultPath), false);
+                        toast("安装包已保存到下载目录");
+                    }
+                });
+            }
+        });
     }
 
     private void setOtaStatus(String text, boolean ongoing) {

@@ -1,9 +1,14 @@
 package com.tvbox.android44.data.repository;
 
+import android.content.ContentResolver;
+import android.content.ContentValues;
 import android.content.Context;
 import android.content.Intent;
+import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Environment;
+import android.provider.MediaStore;
 
 import androidx.core.content.FileProvider;
 
@@ -17,6 +22,14 @@ import com.tvbox.android44.domain.model.AppUpdate;
 import com.tvbox.android44.domain.parser.OtaManifestParser;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.FutureTask;
 import java.util.concurrent.Callable;
@@ -180,15 +193,140 @@ public class UpdateRepository {
         return null;
     }
 
-    /** FileProvider content URI + 系统安装器。 */
+    /** FileProvider content URI + 安装专用系统安装器入口。 */
+    @SuppressWarnings("deprecation")
     public Intent buildInstallIntent(File apk) {
         Uri uri = FileProvider.getUriForFile(context,
                 context.getPackageName() + ".fileprovider", apk);
-        Intent intent = new Intent(Intent.ACTION_VIEW);
+        Intent intent = new Intent(Intent.ACTION_INSTALL_PACKAGE);
         intent.setDataAndType(uri, "application/vnd.android-package-archive");
         intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return intent;
+    }
+
+    /** 保存已校验安装包到公开 Download/TVBox，方便用户通过文件管理器手动安装。 */
+    public String saveApkToDownloads(File apk) throws IOException {
+        if (apk == null || !apk.isFile()) {
+            throw new IOException("安装包不存在");
+        }
+        String displayName = savedApkName(apk);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            return saveApkToMediaStore(apk, displayName);
+        }
+        return saveApkToLegacyDownloads(apk, displayName);
+    }
+
+    private String saveApkToMediaStore(File apk, String displayName) throws IOException {
+        final String relativePath = Environment.DIRECTORY_DOWNLOADS + "/TVBox/";
+        ContentValues values = new ContentValues();
+        values.put(MediaStore.MediaColumns.DISPLAY_NAME, displayName);
+        values.put(MediaStore.MediaColumns.MIME_TYPE, "application/vnd.android.package-archive");
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath);
+        values.put(MediaStore.MediaColumns.IS_PENDING, 1);
+
+        ContentResolver resolver = context.getContentResolver();
+        Uri uri = resolver.insert(Uri.parse("content://media/external/downloads"), values);
+        if (uri == null) {
+            throw new IOException("无法在下载目录创建安装包");
+        }
+        boolean published = false;
+        try {
+            OutputStream output = resolver.openOutputStream(uri, "w");
+            if (output == null) {
+                throw new IOException("无法写入下载目录");
+            }
+            copyApk(apk, output);
+            ContentValues ready = new ContentValues();
+            ready.put(MediaStore.MediaColumns.IS_PENDING, 0);
+            if (resolver.update(uri, ready, null, null) <= 0) {
+                throw new IOException("无法完成保存的安装包");
+            }
+            published = true;
+            return relativePath + displayName;
+        } finally {
+            if (!published) {
+                resolver.delete(uri, null, null);
+            }
+        }
+    }
+
+    @SuppressWarnings("deprecation")
+    private String saveApkToLegacyDownloads(File apk, String displayName) throws IOException {
+        if (!Environment.MEDIA_MOUNTED.equals(Environment.getExternalStorageState())) {
+            throw new IOException("外部存储不可用");
+        }
+        File downloads = Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_DOWNLOADS);
+        File directory = new File(downloads, "TVBox");
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IOException("无法创建 Download/TVBox 目录");
+        }
+        File destination = uniqueFile(directory, displayName);
+        File temporary = File.createTempFile("tvbox-ota-", ".tmp", directory);
+        boolean saved = false;
+        try {
+            copyApk(apk, new FileOutputStream(temporary));
+            if (!temporary.renameTo(destination)) {
+                throw new IOException("无法保存到 Download/TVBox");
+            }
+            saved = true;
+            MediaScannerConnection.scanFile(context,
+                    new String[]{destination.getAbsolutePath()},
+                    new String[]{"application/vnd.android.package-archive"}, null);
+            return Environment.DIRECTORY_DOWNLOADS + "/TVBox/" + destination.getName();
+        } finally {
+            if (!saved && temporary.exists()) {
+                temporary.delete();
+            }
+        }
+    }
+
+    private String savedApkName(File apk) {
+        String timestamp = new SimpleDateFormat("yyyyMMdd-HHmmss-SSS", Locale.US)
+                .format(new Date());
+        return "TVBox4.1+-" + apk.getName().replace(".apk", "") + "-" + timestamp + ".apk";
+    }
+
+    private File uniqueFile(File directory, String desiredName) {
+        File candidate = new File(directory, desiredName);
+        if (!candidate.exists()) {
+            return candidate;
+        }
+        int dot = desiredName.lastIndexOf('.');
+        String base = dot > 0 ? desiredName.substring(0, dot) : desiredName;
+        String extension = dot > 0 ? desiredName.substring(dot) : "";
+        int suffix = 1;
+        do {
+            candidate = new File(directory, base + " (" + suffix++ + ")" + extension);
+        } while (candidate.exists());
+        return candidate;
+    }
+
+    private void copyApk(File source, OutputStream output) throws IOException {
+        InputStream input = null;
+        long copied = 0L;
+        try {
+            input = new FileInputStream(source);
+            byte[] buffer = new byte[8192];
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                output.write(buffer, 0, count);
+                copied += count;
+            }
+            output.flush();
+        } finally {
+            try {
+                if (input != null) {
+                    input.close();
+                }
+            } finally {
+                output.close();
+            }
+        }
+        if (copied != source.length()) {
+            throw new IOException("保存后的安装包大小不一致");
+        }
     }
 
     @SuppressWarnings("unchecked")
