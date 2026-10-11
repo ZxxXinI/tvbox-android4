@@ -574,7 +574,7 @@
 - 用户明确要求自行设备测试；停止后续设备交互。真实安装器是否弹出、无权限下的实际保存及手动安装均待用户验收。诊断时临时设置的 `REQUEST_INSTALL_PACKAGES` AppOp 已恢复 `allow`；测试包已同签名同版本码覆盖安装，未卸载或清除数据。
 - 上述为发布前工作区状态。用户随后明确授权发布 v0.0.6/code6；实际发布、公开清单和设备验收边界见下节与 [发布记录](docs/24-v0.0.6-OTA安装修复发布.md)。
 
-### 2026-10-11 15:36 v0.0.6 OTA 修复发布
+### 2026-10-11 15:36 v0.0.6 OTA 修复首发（后由 code7 重发替代）
 
 - 用户确认保留 v0.0.5，并以 v0.0.6/code6 发布，允许现有 code5 用户经 OTA 获取修复。`app/build.gradle` 默认版本改为 0.0.6/code6；安装 Intent 改用 `ACTION_INSTALL_PACKAGE`；无安装权限时可保存已校验 APK 到 `Download/TVBox/`。
 - 源码提交 `168f870`；`main` 与标签 `v0.0.6` 已推送，标签指向 `469d1150e2a90b3658423dee0a6eac094dea783a`。GitHub Release 已公开并设为 Latest，v0.0.5 保持不变，上传 5 个发布材料。
@@ -584,10 +584,19 @@
 - 稳定 latest 清单匿名 HTTP 200，`0.0.6/code6` 与加速 APK URL 正确；经 `gh-proxy.org` 下载返回 HTTP 200，大小与 SHA-256 均与本地及清单一致。用户要求继续自行进行设备验收，本轮没有进行 ADB 安装器/保存流程测试。
 - 本地交付：[dist/TVBox4.1+-v0.0.6.apk](dist/TVBox4.1%2B-v0.0.6.apk)。完整证据和未完成验收项见 [v0.0.6 发布记录](docs/24-v0.0.6-OTA安装修复发布.md)。
 
-### 2026-10-11 17:33 设置页遥控器焦点顺序修复（本地待设备验收）
+### 2026-10-11 17:33 设置页遥控器焦点顺序修复
 
 - 用户反馈设置页按遥控器下键时焦点跳项，并给出“方向上到历史，再方向下到当前视频源”的绕行操作。
 - 根因：`SettingsFragment` 只在首次显示时按 XML 顺序选择第一个可聚焦项，未声明控件的四向邻居；后续由 Android FocusFinder 按控件矩形的几何距离决定目标。多列短按钮与整行按钮混排，造成设备尺寸/当前焦点不同会走不同路径。
 - `SettingsFragment.java` 为外观、视频源、AI、播放管家和更新控件明确设置 `nextFocusLeft/Right/Up/Down`；单控件与边界锁定在本行；设置页活动时顶部设置入口向下到首项，页面隐藏/销毁时清除链接。
 - `NavigationStateTest.java` 增加完整焦点路径回归。`NavigationStateTest` 20 项在 Robolectric API16/19/23/28 通过，`lintDebug` 通过。生成同签名手动验收包 `dist/TVBox4.1+-v0.0.6-settings-focus-test-final.apk`（2,988,682 字节，SHA-256 `38de7d7da537ffaedef35ff22bad8dc9f8eedb34578718ee9830fd45777cb2b82`），仍为 0.0.6/code6，不触发 OTA。未连接或操作投影，实际遥控器行为由用户验收。
-- 文档：`docs/05` 更新焦点硬规则，`docs/13` 更新当前设置导航基线；详细根因/映射/验证见 [设置页焦点修复记录](docs/25-设置页遥控器焦点顺序.md)。当前代码修改尚未提交、推送或发布，公开版仍为 v0.0.6。
+- 文档：`docs/05` 更新焦点硬规则，`docs/13` 更新当前设置导航基线；详细根因/映射/验证见 [设置页焦点修复记录](docs/25-设置页遥控器焦点顺序.md)。随后已提交 `56ae3e0` 并推送；原本 code6 的手动测试 APK 不触发 OTA，后由 code7 重发版替代。
+
+### 2026-10-11 17:56 v0.0.6 同名重发（遥控器焦点修复）
+
+- 用户要求推送设置页焦点修复，并删除已发布的 v0.0.6 后以相同版本标签重新发布。为让 OTA 识别现有 v0.0.6/code6 安装，保留 `versionName=0.0.6` 和标签 `v0.0.6`，将默认 `versionCode` 递增为 7。v0.0.5 未修改。
+- `app/build.gradle` 默认 code 更新提交 `06a98c2`。旧 v0.0.6 Release 与远端标签已删除；标签重新指向 `06a98c265adbcbbd8b5f6da2653379ed2140358d`，新 Release 已公开并设为 Latest。
+- 最终包：TVBox4.1+ / `com.tvbox.android44` / 0.0.6/code7 / minSdk16 / targetSdk28；2,988,717 字节，SHA-256 `66134b77c7e24ca0afb1259c6e59ea5c06f7830a7612b5f6d7f1e2dea4726a11`。沿用既有 Android Debug 发布证书，v1/v2有效，证书SHA-256 `d507b831ebd7af498c550d0e24b84d1a10f218132ec9e6ce4c43d19f15c1e2d6`；对比旧 code6，材料脚本确认可覆盖升级。
+- 验证：焦点回归20项通过，Release Lint/构建成功；发布材料测试16项通过。GitHub Actions `38129832769` 的测试、Lint、Debug/Release构建、签名连续性、AI配置与API16 OTA材料检查全通过。`local.properties` 的旧SDK路径警告未更改。
+- 稳定 latest OTA 清单匿名HTTP 200，版本 code7，APK URL 使用 `gh-proxy.org`。代理下载的2,988,717字节与本地包及 `apkSha256` 完全相同。五个附件已在 GitHub Release 侧核验。
+- 本地成品：[dist/TVBox4.1+-v0.0.6-reissue.apk](dist/TVBox4.1%2B-v0.0.6-reissue.apk)。没有通过 ADB 复测投影设备；自动化和线上哈希核验不代替实际遥控器/安装器验收。完整数据见 [v0.0.6 重发记录](docs/24-v0.0.6-OTA安装修复发布.md)。

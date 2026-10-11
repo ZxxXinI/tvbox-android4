@@ -2,7 +2,7 @@
 
 > 本软件由 AI 参考 [ZxxXinI/tvbox](https://github.com/ZxxXinI/tvbox) 编写，是独立维护的兼容版，不代表上游官方发布。
 
-当前公开最新版：**v0.0.6 / code6**，显示名称 **TVBox4.1+**，包名 `com.tvbox.android44`。最低 Android 4.1 / API 16；侧载发行，targetSdk 28、compileSdk 35。使用 Java + XML Views、ExoPlayer 2 和 OkHttp 3.12。沿用原签名，支持已有正式版本的覆盖升级和远程 OTA。
+当前公开最新版：**v0.0.6 / code7**（同名重发），显示名称 **TVBox4.1+**，包名 `com.tvbox.android44`。最低 Android 4.1 / API 16；侧载发行，targetSdk 28、compileSdk 35。使用 Java + XML Views、ExoPlayer 2 和 OkHttp 3.12。沿用原签名，支持已有正式版本的覆盖升级和远程 OTA；已安装的 v0.0.6/code6 可收到本次设置页遥控器修复。
 
 扫码和手机端 AI 配置的改动、验证及测试步骤见 [v0.0.4 测试记录](docs/19-v0.0.4扫码与模型配置.md)。OTA 安装器与保存安装包修复见 [v0.0.6 发布记录](docs/24-v0.0.6-OTA安装修复发布.md)。
 
@@ -46,7 +46,7 @@ APK 位于 `app/build/outputs/apk/debug/` 和 `release/`。测试覆盖纯领域
 2. 设置中选择可用视频接口，或扫码添加自定义 MacCMS 接口。
 3. 首页直接浏览该源内容；AI 推荐需配置实际可用的模型服务。
 
-v0.0.4/code4、v0.0.5/code5 原签名正式包或同签名测试包现在可在设置中检查更新并 OTA 升级到 v0.0.6；系统会显示安装确认，应用数据和观看历史应由覆盖安装保留。安装器与保存回退尚待用户在目标设备验收。
+v0.0.4/code4、v0.0.5/code5 以及已安装的 v0.0.6/code6 原签名包，现在可在设置中检查更新并 OTA 升级到 v0.0.6/code7；系统会显示安装确认，应用数据和观看历史应由覆盖安装保留。安装器、保存回退和设置焦点的实际设备行为仍以用户设备验收为准。
 
 当前版本的发布与 OTA、签名核验见 [v0.0.6 发布记录](docs/24-v0.0.6-OTA安装修复发布.md)；历史发布记录见 [v0.0.5](docs/22-v0.0.5发布记录.md)、[v0.0.4](docs/20-v0.0.4发布记录.md) 和 [v0.0.3](docs/18-v0.0.3发布记录.md)。
 
