@@ -170,4 +170,49 @@ public class NavigationStateTest {
         assertTrue(settings.findViewById(R.id.settings_ai_qr).isFocusable());
         assertTrue(settings.findViewById(R.id.settings_ai_key).isFocusable());
     }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void settingsRemoteFocusFollowsVisibleRowsAndDoesNotJumpByGeometry() {
+        controller.get().selectTab(MainActivity.Tab.SETTINGS, true);
+        controller.get().getSupportFragmentManager().executePendingTransactions();
+        android.view.View settings = controller.get().getSupportFragmentManager()
+                .findFragmentByTag("SETTINGS").getView();
+        assertNotNull(settings);
+
+        assertFocusTarget(settings, R.id.settings_theme, android.view.View.FOCUS_DOWN, R.id.settings_api);
+        assertFocusTarget(settings, R.id.settings_font, android.view.View.FOCUS_DOWN, R.id.settings_api);
+        assertFocusTarget(settings, R.id.settings_api, android.view.View.FOCUS_DOWN, R.id.settings_api_manage);
+        assertFocusTarget(settings, R.id.settings_api_manage, android.view.View.FOCUS_RIGHT, R.id.settings_api_qr);
+        assertFocusTarget(settings, R.id.settings_api_qr, android.view.View.FOCUS_DOWN, R.id.settings_ai_provider);
+        assertFocusTarget(settings, R.id.settings_ai_provider, android.view.View.FOCUS_DOWN, R.id.settings_ai_key);
+        assertFocusTarget(settings, R.id.settings_ai_key, android.view.View.FOCUS_DOWN, R.id.settings_ai_qr);
+        assertFocusTarget(settings, R.id.settings_ai_qr, android.view.View.FOCUS_DOWN, R.id.settings_auto_line);
+        assertFocusTarget(settings, R.id.settings_auto_line, android.view.View.FOCUS_RIGHT, R.id.settings_stats);
+        assertFocusTarget(settings, R.id.settings_stats, android.view.View.FOCUS_RIGHT, R.id.settings_stats_clear);
+        assertFocusTarget(settings, R.id.settings_stats_clear, android.view.View.FOCUS_DOWN,
+                R.id.settings_check_toggle);
+        assertFocusTarget(settings, R.id.settings_check_toggle, android.view.View.FOCUS_RIGHT,
+                R.id.settings_update_action);
+        assertFocusTarget(settings, R.id.settings_update_action, android.view.View.FOCUS_DOWN,
+                R.id.settings_update_action);
+
+        assertFocusTarget(settings, R.id.settings_theme, android.view.View.FOCUS_UP, R.id.nav_settings);
+        assertFocusTarget(controller.get().getWindow().getDecorView(), R.id.nav_settings,
+                android.view.View.FOCUS_DOWN, R.id.settings_theme);
+
+        controller.get().selectTab(MainActivity.Tab.HOME, true);
+        controller.get().getSupportFragmentManager().executePendingTransactions();
+        assertEquals(android.view.View.NO_ID,
+                controller.get().findViewById(R.id.nav_settings).getNextFocusDownId());
+    }
+
+    private void assertFocusTarget(android.view.View root, int sourceId, int direction, int targetId) {
+        android.view.View source = root.findViewById(sourceId);
+        android.view.View target = root.getRootView().findViewById(targetId);
+        assertNotNull("missing focus source " + sourceId, source);
+        assertNotNull("missing focus target " + targetId, target);
+        assertTrue("source could not take focus " + sourceId, source.requestFocus());
+        assertSame("unexpected focus neighbor for " + sourceId,
+                target, source.focusSearch(direction));
+    }
 }

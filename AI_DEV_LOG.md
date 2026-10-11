@@ -583,3 +583,11 @@
 - 最终 APK `2,988,236` 字节，SHA-256 `b7473b81379bc8b5cf73a8352095f1dc72ebe7a8ca41a3d8d3a374af59d15c92`；minSdk16，v1/v2签名有效，证书与 v0.0.5 相同。发布材料脚本确认 `previousVersionCode=5` 且可覆盖升级。
 - 稳定 latest 清单匿名 HTTP 200，`0.0.6/code6` 与加速 APK URL 正确；经 `gh-proxy.org` 下载返回 HTTP 200，大小与 SHA-256 均与本地及清单一致。用户要求继续自行进行设备验收，本轮没有进行 ADB 安装器/保存流程测试。
 - 本地交付：[dist/TVBox4.1+-v0.0.6.apk](dist/TVBox4.1%2B-v0.0.6.apk)。完整证据和未完成验收项见 [v0.0.6 发布记录](docs/24-v0.0.6-OTA安装修复发布.md)。
+
+### 2026-10-11 17:33 设置页遥控器焦点顺序修复（本地待设备验收）
+
+- 用户反馈设置页按遥控器下键时焦点跳项，并给出“方向上到历史，再方向下到当前视频源”的绕行操作。
+- 根因：`SettingsFragment` 只在首次显示时按 XML 顺序选择第一个可聚焦项，未声明控件的四向邻居；后续由 Android FocusFinder 按控件矩形的几何距离决定目标。多列短按钮与整行按钮混排，造成设备尺寸/当前焦点不同会走不同路径。
+- `SettingsFragment.java` 为外观、视频源、AI、播放管家和更新控件明确设置 `nextFocusLeft/Right/Up/Down`；单控件与边界锁定在本行；设置页活动时顶部设置入口向下到首项，页面隐藏/销毁时清除链接。
+- `NavigationStateTest.java` 增加完整焦点路径回归。`NavigationStateTest` 20 项在 Robolectric API16/19/23/28 通过，`lintDebug` 通过。生成同签名手动验收包 `dist/TVBox4.1+-v0.0.6-settings-focus-test-final.apk`（2,988,682 字节，SHA-256 `38de7d7da537ffaedef35ff22bad8dc9f8eedb34578718ee9830fd45777cb2b82`），仍为 0.0.6/code6，不触发 OTA。未连接或操作投影，实际遥控器行为由用户验收。
+- 文档：`docs/05` 更新焦点硬规则，`docs/13` 更新当前设置导航基线；详细根因/映射/验证见 [设置页焦点修复记录](docs/25-设置页遥控器焦点顺序.md)。当前代码修改尚未提交、推送或发布，公开版仍为 v0.0.6。

@@ -243,6 +243,8 @@ public class SettingsFragment extends Fragment {
             btnUpdateAction.setText(R.string.install_update);
         }
         refresh();
+        configureRemoteFocus(root);
+        setSettingsNavigationTarget(!isHidden());
 
         // 遥控器兜底：进入设置页时若无焦点则落到第一个可操作控件
         root.post(new Runnable() {
@@ -258,6 +260,57 @@ public class SettingsFragment extends Fragment {
             }
         });
         return root;
+    }
+
+    /** 设置页按可见行列显式导航，避免 FocusFinder 按控件几何距离跳项。 */
+    private void configureRemoteFocus(View root) {
+        int theme = R.id.settings_theme;
+        int font = R.id.settings_font;
+        int api = R.id.settings_api;
+        int apiManage = R.id.settings_api_manage;
+        int apiQr = R.id.settings_api_qr;
+        int aiProvider = R.id.settings_ai_provider;
+        int aiKey = R.id.settings_ai_key;
+        int aiQr = R.id.settings_ai_qr;
+        int autoLine = R.id.settings_auto_line;
+        int stats = R.id.settings_stats;
+        int clearStats = R.id.settings_stats_clear;
+        int checkToggle = R.id.settings_check_toggle;
+        int updateAction = R.id.settings_update_action;
+        int navSettings = R.id.nav_settings;
+
+        setFocusNeighbors(root, theme, theme, font, navSettings, api);
+        setFocusNeighbors(root, font, theme, font, navSettings, api);
+        setFocusNeighbors(root, api, api, api, theme, apiManage);
+        setFocusNeighbors(root, apiManage, apiManage, apiQr, api, aiProvider);
+        setFocusNeighbors(root, apiQr, apiManage, apiQr, api, aiProvider);
+        setFocusNeighbors(root, aiProvider, aiProvider, aiProvider, apiQr, aiKey);
+        setFocusNeighbors(root, aiKey, aiKey, aiKey, aiProvider, aiQr);
+        setFocusNeighbors(root, aiQr, aiQr, aiQr, aiKey, autoLine);
+        setFocusNeighbors(root, autoLine, autoLine, stats, aiQr, checkToggle);
+        setFocusNeighbors(root, stats, autoLine, clearStats, aiQr, checkToggle);
+        setFocusNeighbors(root, clearStats, stats, clearStats, aiQr, checkToggle);
+        setFocusNeighbors(root, checkToggle, checkToggle, updateAction, autoLine, checkToggle);
+        setFocusNeighbors(root, updateAction, checkToggle, updateAction, stats, updateAction);
+    }
+
+    private void setFocusNeighbors(View root, int viewId, int leftId, int rightId,
+                                   int upId, int downId) {
+        View view = root.findViewById(viewId);
+        if (view == null) return;
+        view.setNextFocusLeftId(leftId);
+        view.setNextFocusRightId(rightId);
+        view.setNextFocusUpId(upId);
+        view.setNextFocusDownId(downId);
+    }
+
+    private void setSettingsNavigationTarget(boolean enabled) {
+        Activity activity = getActivity();
+        if (activity == null) return;
+        View settingsNavigation = activity.findViewById(R.id.nav_settings);
+        if (settingsNavigation != null) {
+            settingsNavigation.setNextFocusDownId(enabled ? R.id.settings_theme : View.NO_ID);
+        }
     }
 
     private void refresh() {
@@ -1016,6 +1069,7 @@ public class SettingsFragment extends Fragment {
 
     @Override public void onHiddenChanged(boolean hidden) {
         super.onHiddenChanged(hidden);
+        setSettingsNavigationTarget(!hidden);
         if (hidden) {
             stopConfigServer();
             if (qrDialog != null && qrDialog.isShowing()) qrDialog.dismiss();
@@ -1036,6 +1090,7 @@ public class SettingsFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
+        setSettingsNavigationTarget(false);
         ++viewGeneration;
         if (updateHandle != null) {
             updateHandle.cancel();
