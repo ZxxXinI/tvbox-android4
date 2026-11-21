@@ -8,9 +8,11 @@ import android.view.ViewGroup;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 import androidx.recyclerview.widget.GridLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -20,15 +22,20 @@ import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.AppConstants;
 import com.tvbox.android44.common.StateLayout;
 import com.tvbox.android44.common.PageFocusState;
+import com.tvbox.android44.common.TvDialogs;
 import com.tvbox.android44.domain.parser.NameNormalizer;
 import com.tvbox.android44.common.ui.GridSpacingDecoration;
+import com.tvbox.android44.common.ui.LanQrDialog;
 import com.tvbox.android44.common.ui.PosterEntry;
 import com.tvbox.android44.common.ui.PosterGridAdapter;
 import com.tvbox.android44.data.local.SettingsRepository;
 import com.tvbox.android44.data.repository.MultiSourceSearch;
 import com.tvbox.android44.domain.model.Movie;
 import com.tvbox.android44.feature.detail.DetailActivity;
+import com.tvbox.android44.feature.settings.ConfigHttpServer;
 
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -48,6 +55,10 @@ public class SearchFragment extends Fragment implements PageFocusState.Owner {
     private String lastQuery;
     private String pendingQuery;
     private Bundle pendingFocus;
+    private View phoneSearchButton;
+    private AlertDialog phoneNetworkDialog;
+    private AlertDialog phoneQrDialog;
+    private ConfigHttpServer phoneSearchSession;
 
     @Nullable
     @Override
@@ -58,6 +69,8 @@ public class SearchFragment extends Fragment implements PageFocusState.Owner {
         status = root.findViewById(R.id.search_status);
         state = root.findViewById(R.id.search_state);
         grid = root.findViewById(R.id.search_grid);
+        phoneSearchButton = root.findViewById(R.id.search_phone);
+        phoneSearchButton.setOnClickListener(view -> openPhoneSearch());
 
         int columns = columnsForScale();
         grid.setLayoutManager(new GridLayoutManager(getActivity(), columns));
@@ -101,7 +114,10 @@ public class SearchFragment extends Fragment implements PageFocusState.Owner {
         super.onViewCreated(view, savedInstanceState);
         String query = pendingQuery != null ? pendingQuery : lastQuery;
         pendingQuery = null;
-        if (query != null && !query.isEmpty()) { input.setText(query); startSearch(query); }
+        if (query != null && !query.isEmpty()) {
+            setQueryText(query);
+            startSearch(query);
+        }
     }
 
     @Override public void onSaveInstanceState(@NonNull Bundle out) {
@@ -118,7 +134,8 @@ public class SearchFragment extends Fragment implements PageFocusState.Owner {
 
     @Override public void onHiddenChanged(boolean hidden) {
         super.onHiddenChanged(hidden);
-        if (!hidden) restorePageFocus(pendingFocus);
+        if (hidden) closePhoneSearch();
+        else restorePageFocus(pendingFocus);
     }
 
     private int columnsForScale() {
@@ -138,8 +155,98 @@ public class SearchFragment extends Fragment implements PageFocusState.Owner {
             return;
         }
         if (input == null || getView() == null) { pendingQuery = query.trim(); return; }
-        input.setText(query.trim());
-        startSearch(query.trim());
+        String value = query.trim();
+        setQueryText(value);
+        startSearch(value);
+    }
+
+    private void setQueryText(String query) {
+        input.setText(query);
+        input.setSelection(input.length());
+    }
+
+    public void openPhoneSearch() {
+        if (!canUsePhoneSearch() || phoneSearchSession != null
+                || (phoneNetworkDialog != null && phoneNetworkDialog.isShowing())) return;
+        List<String> addresses = LanQrDialog.localIpv4s();
+        if (addresses.isEmpty()) {
+            showPhoneMessage(R.string.qr_no_lan);
+        } else if (addresses.size() == 1) {
+            openPhoneSearchAt(addresses.get(0));
+        } else {
+            phoneNetworkDialog = TvDialogs.singleChoice(requireActivity(), getString(R.string.qr_choose_network),
+                    addresses, 0, index -> openPhoneSearchAt(addresses.get(index)));
+        }
+    }
+
+    void openPhoneSearchAt(String address) {
+        if (!canUsePhoneSearch() || phoneSearchSession != null) return;
+        ConfigHttpServer session;
+        try {
+            session = createPhoneSearchSession(InetAddress.getByName(address),
+                    (submitted, fields) -> {
+                        if (submitted != phoneSearchSession || !canUsePhoneSearch()) return false;
+                        pendingFocus = null;
+                        presetQuery(fields.get("query"));
+                        return true;
+                    }, this::onPhoneSearchClosed);
+        } catch (UnknownHostException | IllegalArgumentException error) {
+            showPhoneMessage(R.string.qr_no_lan);
+            return;
+        }
+        if (!session.start()) {
+            showPhoneMessage(R.string.qr_start_failed);
+            return;
+        }
+        phoneSearchSession = session;
+        String url = "http://" + address + ":" + session.port() + "/" + session.token();
+        phoneQrDialog = LanQrDialog.create(requireActivity(), R.string.search_phone_title,
+                R.string.search_phone_hint, url);
+        phoneQrDialog.setOnDismissListener(dialog -> {
+            if (phoneSearchSession != session) return;
+            closePhoneSearch();
+            if (canUsePhoneSearch()) phoneSearchButton.requestFocus();
+        });
+        phoneQrDialog.show();
+    }
+
+    protected ConfigHttpServer createPhoneSearchSession(InetAddress address, ConfigHttpServer.SubmitListener submit,
+                                                        ConfigHttpServer.CloseListener close) {
+        return new ConfigHttpServer(ConfigHttpServer.Mode.SEARCH, address, submit, close);
+    }
+
+    private void onPhoneSearchClosed(ConfigHttpServer session, ConfigHttpServer.CloseReason reason) {
+        if (session != phoneSearchSession) return;
+        if (phoneQrDialog != null) phoneQrDialog.dismiss();
+        if (canUsePhoneSearch()) {
+            if (reason == ConfigHttpServer.CloseReason.EXPIRED) showPhoneMessage(R.string.qr_expired);
+            else if (reason == ConfigHttpServer.CloseReason.FAILURES) showPhoneMessage(R.string.qr_failures);
+        }
+    }
+
+    private boolean canUsePhoneSearch() {
+        return isAdded() && isResumed() && !isHidden() && getView() != null;
+    }
+
+    private void showPhoneMessage(int resId) {
+        Toast.makeText(requireActivity(), resId, Toast.LENGTH_SHORT).show();
+    }
+
+    private void closePhoneSearch() {
+        ConfigHttpServer session = phoneSearchSession;
+        phoneSearchSession = null;
+        if (session != null) session.stop();
+        AlertDialog qr = phoneQrDialog;
+        phoneQrDialog = null;
+        if (qr != null) qr.dismiss();
+        AlertDialog chooser = phoneNetworkDialog;
+        phoneNetworkDialog = null;
+        if (chooser != null) chooser.dismiss();
+    }
+
+    @Override public void onStop() {
+        closePhoneSearch();
+        super.onStop();
     }
 
     private void startSearch(String rawQuery) {
@@ -227,6 +334,7 @@ public class SearchFragment extends Fragment implements PageFocusState.Owner {
 
     @Override
     public void onDestroyView() {
+        closePhoneSearch();
         ++requestId;
         // 离开页面取消搜索；取消不计失败、不显示错误
         if (searchHandle != null) {

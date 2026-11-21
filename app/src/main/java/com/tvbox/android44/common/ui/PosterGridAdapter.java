@@ -6,6 +6,7 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.annotation.LayoutRes;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.bumptech.glide.Glide;
@@ -24,6 +25,7 @@ public class PosterGridAdapter extends RecyclerView.Adapter<PosterGridAdapter.Ho
     private final List<PosterEntry> entries = new ArrayList<PosterEntry>();
     private final OnPosterClick click;
     private final float posterRatio;
+    private final int itemLayout;
 
     public interface OnPosterClick {
         void onPosterClick(PosterEntry entry, int position);
@@ -34,8 +36,13 @@ public class PosterGridAdapter extends RecyclerView.Adapter<PosterGridAdapter.Ho
     }
 
     public PosterGridAdapter(OnPosterClick click, float posterRatio) {
+        this(click, posterRatio, R.layout.item_poster);
+    }
+
+    public PosterGridAdapter(OnPosterClick click, float posterRatio, @LayoutRes int itemLayout) {
         this.click = click;
         this.posterRatio = posterRatio;
+        this.itemLayout = itemLayout;
         setHasStableIds(true);
         setStateRestorationPolicy(StateRestorationPolicy.PREVENT_WHEN_EMPTY);
     }
@@ -100,7 +107,7 @@ public class PosterGridAdapter extends RecyclerView.Adapter<PosterGridAdapter.Ho
     @Override
     public Holder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View v = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_poster, parent, false);
+                .inflate(itemLayout, parent, false);
         Holder h = new Holder(v);
         ((AspectImageView) h.image).setRatio(posterRatio);
         FocusScaler.attach(v);

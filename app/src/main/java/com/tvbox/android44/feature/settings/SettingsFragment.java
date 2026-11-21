@@ -9,6 +9,7 @@ import android.content.pm.PackageManager;
 import android.os.Bundle;
 import android.os.Build;
 import android.text.format.Formatter;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -30,6 +31,7 @@ import com.tvbox.android44.app.TvBoxApp;
 import com.tvbox.android44.common.FocusUtils;
 import com.tvbox.android44.common.Result;
 import com.tvbox.android44.common.TvDialogs;
+import com.tvbox.android44.common.ui.LanQrDialog;
 import com.tvbox.android44.data.local.SettingsRepository;
 import com.tvbox.android44.data.repository.UpdateRepository;
 import com.tvbox.android44.domain.model.ApiLine;
@@ -38,12 +40,8 @@ import com.tvbox.android44.domain.model.AppUpdate;
 import com.tvbox.android44.domain.model.LineHealth;
 
 import java.io.File;
-import java.net.Inet4Address;
 import java.net.InetAddress;
-import java.net.InterfaceAddress;
-import java.net.NetworkInterface;
 import java.util.ArrayList;
-import java.util.Enumeration;
 import java.util.List;
 
 /**
@@ -58,6 +56,18 @@ import java.util.List;
 public class SettingsFragment extends Fragment {
 
     private static final int REQUEST_SAVE_APK_STORAGE = 4107;
+    private static final String STATE_REMOTE_COLUMNS = "remote_columns";
+    private static final int[][] REMOTE_ROWS = {
+            {R.id.settings_theme, R.id.settings_font},
+            {R.id.settings_api},
+            {R.id.settings_api_manage, R.id.settings_api_qr},
+            {R.id.settings_ai_provider},
+            {R.id.settings_ai_key},
+            {R.id.settings_ai_qr},
+            {R.id.settings_auto_line, R.id.settings_stats, R.id.settings_stats_clear},
+            {R.id.settings_check_toggle, R.id.settings_update_action}
+    };
+    private int[] remoteColumns = {-1, -1, -1, -1, -1, -1, -1, -1};
 
     private TextView btnTheme;
     private TextView btnFont;
@@ -89,6 +99,8 @@ public class SettingsFragment extends Fragment {
     public View onCreateView(@NonNull LayoutInflater inflater, @Nullable ViewGroup container,
                              @Nullable Bundle savedInstanceState) {
         final int generation = ++viewGeneration;
+        int[] savedColumns = savedInstanceState == null ? null : savedInstanceState.getIntArray(STATE_REMOTE_COLUMNS);
+        if (savedColumns != null && savedColumns.length == REMOTE_ROWS.length) remoteColumns = savedColumns.clone();
         View root = inflater.inflate(R.layout.fragment_settings, container, false);
         btnTheme = root.findViewById(R.id.settings_theme);
         btnFont = root.findViewById(R.id.settings_font);
@@ -243,15 +255,13 @@ public class SettingsFragment extends Fragment {
             btnUpdateAction.setText(R.string.install_update);
         }
         refresh();
-        configureRemoteFocus(root);
-        setSettingsNavigationTarget(!isHidden());
 
         // 遥控器兜底：进入设置页时若无焦点则落到第一个可操作控件
         root.post(new Runnable() {
             @Override
             public void run() {
                 View root = getView();
-                if (root != null && root.findFocus() == null) {
+                if (root != null && root.isShown() && root.findFocus() == null) {
                     View first = FocusUtils.firstFocusable(root);
                     if (first != null) {
                         first.requestFocus();
@@ -262,55 +272,58 @@ public class SettingsFragment extends Fragment {
         return root;
     }
 
-    /** 设置页按可见行列显式导航，避免 FocusFinder 按控件几何距离跳项。 */
-    private void configureRemoteFocus(View root) {
-        int theme = R.id.settings_theme;
-        int font = R.id.settings_font;
-        int api = R.id.settings_api;
-        int apiManage = R.id.settings_api_manage;
-        int apiQr = R.id.settings_api_qr;
-        int aiProvider = R.id.settings_ai_provider;
-        int aiKey = R.id.settings_ai_key;
-        int aiQr = R.id.settings_ai_qr;
-        int autoLine = R.id.settings_auto_line;
-        int stats = R.id.settings_stats;
-        int clearStats = R.id.settings_stats_clear;
-        int checkToggle = R.id.settings_check_toggle;
-        int updateAction = R.id.settings_update_action;
-        int navSettings = R.id.nav_settings;
+    /** D-pad moves by visual rows and remembers the button last used in each row. */
+    public boolean handleDirectionKey(KeyEvent event, View focused) {
+        View root = getView();
+        if (event.getAction() != KeyEvent.ACTION_DOWN || focused == null || root == null
+                || isHidden() || root.getVisibility() != View.VISIBLE) return false;
+        int code = event.getKeyCode();
+        boolean vertical = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN;
+        if (!vertical && code != KeyEvent.KEYCODE_DPAD_LEFT && code != KeyEvent.KEYCODE_DPAD_RIGHT) return false;
 
-        setFocusNeighbors(root, theme, theme, font, navSettings, api);
-        setFocusNeighbors(root, font, theme, font, navSettings, api);
-        setFocusNeighbors(root, api, api, api, theme, apiManage);
-        setFocusNeighbors(root, apiManage, apiManage, apiQr, api, aiProvider);
-        setFocusNeighbors(root, apiQr, apiManage, apiQr, api, aiProvider);
-        setFocusNeighbors(root, aiProvider, aiProvider, aiProvider, apiQr, aiKey);
-        setFocusNeighbors(root, aiKey, aiKey, aiKey, aiProvider, aiQr);
-        setFocusNeighbors(root, aiQr, aiQr, aiQr, aiKey, autoLine);
-        setFocusNeighbors(root, autoLine, autoLine, stats, aiQr, checkToggle);
-        setFocusNeighbors(root, stats, autoLine, clearStats, aiQr, checkToggle);
-        setFocusNeighbors(root, clearStats, stats, clearStats, aiQr, checkToggle);
-        setFocusNeighbors(root, checkToggle, checkToggle, updateAction, autoLine, checkToggle);
-        setFocusNeighbors(root, updateAction, checkToggle, updateAction, stats, updateAction);
-    }
-
-    private void setFocusNeighbors(View root, int viewId, int leftId, int rightId,
-                                   int upId, int downId) {
-        View view = root.findViewById(viewId);
-        if (view == null) return;
-        view.setNextFocusLeftId(leftId);
-        view.setNextFocusRightId(rightId);
-        view.setNextFocusUpId(upId);
-        view.setNextFocusDownId(downId);
-    }
-
-    private void setSettingsNavigationTarget(boolean enabled) {
-        Activity activity = getActivity();
-        if (activity == null) return;
-        View settingsNavigation = activity.findViewById(R.id.nav_settings);
-        if (settingsNavigation != null) {
-            settingsNavigation.setNextFocusDownId(enabled ? R.id.settings_theme : View.NO_ID);
+        if (focused.getId() == R.id.nav_settings && code == KeyEvent.KEYCODE_DPAD_DOWN) {
+            focusRemoteRow(root, 0, 0);
+            return true;
         }
+        int step = code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_LEFT ? -1 : 1;
+        for (int row = 0; row < REMOTE_ROWS.length; row++) {
+            int[] buttons = REMOTE_ROWS[row];
+            for (int column = 0; column < buttons.length; column++) {
+                if (buttons[column] != focused.getId()) continue;
+                remoteColumns[row] = column;
+                if (vertical) {
+                    int target = row + step;
+                    if (target < 0) root.getRootView().findViewById(R.id.nav_settings).requestFocus();
+                    else if (target < REMOTE_ROWS.length) focusRemoteRow(root, target, column);
+                } else {
+                    for (int target = column + step; target >= 0 && target < buttons.length; target += step) {
+                        if (requestRemoteFocus(root, buttons[target])) break;
+                    }
+                }
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void focusRemoteRow(View root, int row, int fromColumn) {
+        int[] buttons = REMOTE_ROWS[row];
+        int preferred = remoteColumns[row] >= 0 ? remoteColumns[row] : fromColumn;
+        if (requestRemoteFocus(root, buttons[Math.min(preferred, buttons.length - 1)])) return;
+        for (int button : buttons) {
+            if (requestRemoteFocus(root, button)) return;
+        }
+    }
+
+    private boolean requestRemoteFocus(View root, int id) {
+        View button = root.findViewById(id);
+        return button != null && button.getVisibility() == View.VISIBLE
+                && button.isEnabled() && button.requestFocus();
+    }
+
+    @Override public void onSaveInstanceState(@NonNull Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putIntArray(STATE_REMOTE_COLUMNS, remoteColumns.clone());
     }
 
     private void refresh() {
@@ -862,7 +875,7 @@ public class SettingsFragment extends Fragment {
 
     private void showQrDialog(final ConfigHttpServer.Mode mode, final View returnTo) {
         stopConfigServer();
-        final List<String> ips = localIpv4s();
+        final List<String> ips = LanQrDialog.localIpv4s();
         if (ips.isEmpty()) { toast(getString(R.string.qr_no_lan)); return; }
         if (ips.size() == 1) showQrAtAddress(mode, returnTo, ips.get(0));
         else TvDialogs.singleChoice(getActivity(), getString(R.string.qr_choose_network), ips, 0,
@@ -902,20 +915,9 @@ public class SettingsFragment extends Fragment {
             return;
         }
         String url = "http://" + ip + ":" + configServer.port() + "/" + configServer.token();
-        View view = LayoutInflater.from(getActivity()).inflate(R.layout.dialog_qr_config, null);
-        TextView urlView = view.findViewById(R.id.qr_url);
-        final TextView hintView = view.findViewById(R.id.qr_hint);
-        com.tvbox.android44.common.ui.QrImageView image = view.findViewById(R.id.qr_image);
-        urlView.setText(url);
-        hintView.setText(R.string.qr_session_hint);
-        image.setCode(url, new com.tvbox.android44.common.ui.QrImageView.ReadyListener() {
-            @Override public void onReady(boolean success) {
-                hintView.setText(success ? R.string.qr_session_hint : R.string.qr_manual_hint);
-            }
-        });
-        qrDialog = new AlertDialog.Builder(getActivity(), R.style.TvDialog)
-                .setTitle(mode == ConfigHttpServer.Mode.AI ? R.string.qr_ai_title : R.string.qr_api_title)
-                .setView(view).setCancelable(true).create();
+        qrDialog = LanQrDialog.create(getActivity(),
+                mode == ConfigHttpServer.Mode.AI ? R.string.qr_ai_title : R.string.qr_api_title,
+                R.string.qr_session_hint, url);
         qrDialog.setOnDismissListener(new android.content.DialogInterface.OnDismissListener() {
             @Override public void onDismiss(android.content.DialogInterface dialog) {
                 stopConfigServer();
@@ -925,11 +927,7 @@ public class SettingsFragment extends Fragment {
                 qrReturnTo = null;
             }
         });
-        view.findViewById(R.id.qr_close).setOnClickListener(new View.OnClickListener() {
-            @Override public void onClick(View view) { qrDialog.dismiss(); }
-        });
         qrDialog.show();
-        image.requestFocus();
     }
 
     /** 手机端提交回调（主线程）：保存后关会话；返回 false 会向手机端提示保存失败。 */
@@ -962,30 +960,6 @@ public class SettingsFragment extends Fragment {
             configServer.stop();
             configServer = null;
         }
-    }
-
-    /** 枚举非 loopback、已启用的 IPv4 地址（文档 09 §5：多地址展示候选）。 */
-    private List<String> localIpv4s() {
-        List<String> ips = new ArrayList<String>();
-        try {
-            Enumeration<NetworkInterface> nis = NetworkInterface.getNetworkInterfaces();
-            while (nis != null && nis.hasMoreElements()) {
-                NetworkInterface ni = nis.nextElement();
-                if (!ni.isUp() || ni.isLoopback()) {
-                    continue;
-                }
-                for (InterfaceAddress ia : ni.getInterfaceAddresses()) {
-                    InetAddress addr = ia.getAddress();
-                    if (addr instanceof Inet4Address && addr.isSiteLocalAddress() && !addr.isLoopbackAddress()
-                            && !addr.isLinkLocalAddress()) {
-                        ips.add(addr.getHostAddress());
-                    }
-                }
-            }
-        } catch (Exception ignored) {
-            // 无权限或枚举失败：按无地址处理
-        }
-        return ips;
     }
 
     // ===== 通用输入弹窗 =====
@@ -1069,7 +1043,6 @@ public class SettingsFragment extends Fragment {
 
     @Override public void onHiddenChanged(boolean hidden) {
         super.onHiddenChanged(hidden);
-        setSettingsNavigationTarget(!hidden);
         if (hidden) {
             stopConfigServer();
             if (qrDialog != null && qrDialog.isShowing()) qrDialog.dismiss();
@@ -1090,7 +1063,6 @@ public class SettingsFragment extends Fragment {
 
     @Override
     public void onDestroyView() {
-        setSettingsNavigationTarget(false);
         ++viewGeneration;
         if (updateHandle != null) {
             updateHandle.cancel();

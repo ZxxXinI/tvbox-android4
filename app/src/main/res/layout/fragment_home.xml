@@ -13,6 +13,8 @@
         android:paddingTop="8dp"
         android:paddingBottom="16dp">
 
+        <include layout="@layout/section_home_continue" />
+
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/home_tabs"
             android:layout_width="match_parent"

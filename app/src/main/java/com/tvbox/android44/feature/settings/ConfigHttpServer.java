@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /** A temporary configuration session bound to one selected LAN address. */
 public class ConfigHttpServer {
-    public enum Mode { AI, API }
+    public enum Mode { AI, API, SEARCH }
     public enum CloseReason { CLOSED, SAVED, EXPIRED, FAILURES }
     public interface SubmitListener { boolean onSubmit(ConfigHttpServer session, Map<String, String> fields); }
     public interface CloseListener { void onClosed(ConfigHttpServer session, CloseReason reason); }
@@ -78,7 +78,8 @@ public class ConfigHttpServer {
     private boolean closed;
 
     public ConfigHttpServer(Mode mode, InetAddress address, SubmitListener listener, CloseListener closeListener) {
-        this(mode, address, mode == Mode.AI ? AppConstants.CONFIG_PORT_AI : AppConstants.CONFIG_PORT_API,
+        this(mode, address, mode == Mode.SEARCH ? AppConstants.CONFIG_PORT_SEARCH
+                        : mode == Mode.AI ? AppConstants.CONFIG_PORT_AI : AppConstants.CONFIG_PORT_API,
                 AppConstants.CONFIG_PORT_FALLBACK_TRIES, AppConstants.CONFIG_TOKEN_TTL_MS,
                 TvBoxApp.get().executors().scheduler(), new Executor() {
                     @Override public void execute(Runnable runnable) { TvBoxApp.get().executors().main(runnable); }
@@ -233,7 +234,10 @@ public class ConfigHttpServer {
                     return;
                 }
                 if (!validate(fields)) {
-                    reject(socket, 400, "Bad Request", "字段不合法：请检查名称、URL 或模型"); return;
+                    reject(socket, 400, "Bad Request", mode == Mode.SEARCH
+                            ? "请输入片名，长度不能超过 " + AppConstants.SEARCH_QUERY_MAX_LENGTH + " 个字符"
+                            : "字段不合法：请检查名称、URL 或模型");
+                    return;
                 }
                 submit(socket, fields);
             } else reject(socket, 405, "Method Not Allowed", "不支持此请求");
@@ -294,7 +298,8 @@ public class ConfigHttpServer {
         try {
             if (!delivered.await(5, TimeUnit.SECONDS)) {
                 pending.set(false);
-                if (running.get()) reject(socket, 504, "Gateway Timeout", "保存超时，请重新提交");
+                if (running.get()) reject(socket, 504, "Gateway Timeout",
+                        mode == Mode.SEARCH ? "发送超时，请重试" : "保存超时，请重新提交");
                 return;
             }
         } catch (InterruptedException error) {
@@ -307,9 +312,10 @@ public class ConfigHttpServer {
         if (saved[0]) {
             try {
                 respond(socket, 200, "OK", "text/html; charset=utf-8",
-                        resultHtml(true, "配置已保存，电视端会话已关闭，可以关闭本页"));
+                        resultHtml(true, mode == Mode.SEARCH ? "已发送到电视，电视正在搜索"
+                                : "配置已保存，电视端会话已关闭，可以关闭本页"));
             } finally { finish(CloseReason.SAVED); }
-        } else reject(socket, 500, "Error", "保存失败，请重试");
+        } else reject(socket, 500, "Error", mode == Mode.SEARCH ? "发送失败，请重试" : "保存失败，请重试");
     }
 
     private void reject(Socket socket, int status, String reason, String message) throws IOException {
@@ -368,6 +374,11 @@ public class ConfigHttpServer {
     }
 
     private boolean validate(Map<String, String> fields) {
+        if (mode == Mode.SEARCH) {
+            String query = fields.get("query");
+            return query != null && !query.trim().isEmpty()
+                    && query.trim().length() <= AppConstants.SEARCH_QUERY_MAX_LENGTH;
+        }
         if (mode == Mode.AI) {
             String provider = fields.get("provider");
             String model = fields.get("model");
@@ -410,6 +421,18 @@ public class ConfigHttpServer {
         if (mode == Mode.AI) {
             return AiConfigPage.render(token);
         }
+        if (mode == Mode.SEARCH) {
+            return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
+                    + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+                    + "<title>TVBox4.1+ 搜索</title></head>"
+                    + "<body style=\"font-family:sans-serif;max-width:480px;margin:32px auto;padding:0 16px\">"
+                    + "<h2>发送片名到电视</h2><form method=\"POST\" action=\"" + action + "\">"
+                    + "<p><label>片名<br><input name=\"query\" type=\"search\" required maxlength=\""
+                    + AppConstants.SEARCH_QUERY_MAX_LENGTH
+                    + "\" style=\"box-sizing:border-box;width:100%;padding:10px;font-size:16px\"></label></p>"
+                    + "<button type=\"submit\" style=\"padding:10px 24px;font-size:16px\">在电视上搜索</button>"
+                    + "</form></body></html>";
+        }
         return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
                 + "<title>TVBox4.1+ 视频接口配置</title></head>"
@@ -427,10 +450,10 @@ public class ConfigHttpServer {
                 + "</body></html>";
     }
 
-    private static String resultHtml(boolean ok, String message) {
+    private String resultHtml(boolean ok, String message) {
         return "<!DOCTYPE html><html lang=\"zh-CN\"><head><meta charset=\"utf-8\">"
                 + "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-                + "<title>配置结果</title></head>"
+                + (mode == Mode.SEARCH ? "<title>发送结果</title></head>" : "<title>配置结果</title></head>")
                 + "<body style=\"font-family:sans-serif;max-width:480px;margin:60px auto;"
                 + "text-align:center;padding:0 16px\">"
                 + "<h2 style=\"color:" + (ok ? "#00875a" : "#c0392b") + "\">"

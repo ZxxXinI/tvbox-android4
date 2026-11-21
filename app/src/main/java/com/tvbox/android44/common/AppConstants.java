@@ -81,6 +81,7 @@ public final class AppConstants {
     // ===== 局域网配置服务 =====
     public static final int CONFIG_PORT_AI = 9978;
     public static final int CONFIG_PORT_API = 9979;
+    public static final int CONFIG_PORT_SEARCH = 9983;
     public static final int CONFIG_PORT_FALLBACK_TRIES = 4;
     /** 配置会话 token 有效期（毫秒）。 */
     public static final long CONFIG_TOKEN_TTL_MS = 5 * 60 * 1000L;
@@ -96,6 +97,7 @@ public final class AppConstants {
     /** 列表/分类请求整体上限（callTimeout）：须大于连接+读取之和，否则慢网误杀。 */
     public static final long LIST_CALL_TIMEOUT_MS =
             HTTP_CONNECT_TIMEOUT_MS + HTTP_READ_TIMEOUT_MS + 5 * 1000L;
+    public static final long HOME_BACKUP_TIMEOUT_MS = 8 * 1000L;
     /** AI 请求基线：连接 30s / 读取 45s / 写入 20s。 */
     public static final long AI_CONNECT_TIMEOUT_MS = 30 * 1000L;
     public static final long AI_READ_TIMEOUT_MS = 45 * 1000L;

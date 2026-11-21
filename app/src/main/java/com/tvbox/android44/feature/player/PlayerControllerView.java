@@ -124,10 +124,13 @@ public class PlayerControllerView {
 
     public void setPlaying(boolean playing) {
         this.playing = playing;
-        toggle.setText(playing ? "暂停" : "播放");
         if (shown) {
             scheduleHide();
         }
+    }
+
+    public void setPlayIntent(boolean playWhenReady) {
+        toggle.setText(playWhenReady ? R.string.pause : R.string.play);
     }
 
     public void setSpeedLabel(float speedValue) {

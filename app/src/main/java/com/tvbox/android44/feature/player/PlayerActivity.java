@@ -137,7 +137,6 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     private MovieRepository.Request detailRequest;
     private final List<String> triedLines = new ArrayList<String>();
     private BufferJudger judger;
-    private boolean playing;
     private boolean readyRecorded;
     private int speedIndex = 2; // 1.0x
     private boolean lastLineFailed;
@@ -436,6 +435,10 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     }
 
     private void startPlayback() {
+        startPlayback(true);
+    }
+
+    private void startPlayback(boolean playWhenReady) {
         boolean controllerWasShown = controller.isShown();
         releasePlayer();
         if (currentEpisode == null) {
@@ -448,15 +451,17 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         mediaFallbackUsed = false;
         readyRecorded = false;
         judger.reset();
+        judger.onPaused(!playWhenReady);
         player = createPlayer();
         player.addListener(this);
         playerView.setPlayer(player);
 
         MediaSource mediaSource = mediaSources.create(currentEpisode.url, mediaHls);
         player.setMediaSource(mediaSource, resumePosition > 0 ? resumePosition : 0);
+        controller.setPlaying(false);
+        controller.setPlayIntent(playWhenReady);
+        player.setPlayWhenReady(playWhenReady);
         player.prepare();
-        player.setPlayWhenReady(true);
-        playing = true;
         applySpeed(speedIndex);
         requestAudioFocus();
         registerNoisy();
@@ -536,7 +541,6 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
 
     @Override
     public void onIsPlayingChanged(boolean isPlaying) {
-        playing = isPlaying;
         controller.setPlaying(isPlaying);
         if (isPlaying) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -544,6 +548,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     }
 
     @Override public void onPlayWhenReadyChanged(boolean playWhenReady, int reason) {
+        controller.setPlayIntent(playWhenReady);
         judger.onPaused(!playWhenReady);
         if (!playWhenReady) saveHistory();
     }
@@ -610,15 +615,19 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             triedLines.add(lineId);
         }
         final long now = System.currentTimeMillis();
-        PlaySource next = AutoSwitchPolicy.pickNext(movie.playSources, lineId, triedLines,
+        List<PlaySource> matchingLines = new ArrayList<>();
+        for (PlaySource source : movie.playSources) {
+            if (matchingEpisodeIndex(source) >= 0) matchingLines.add(source);
+        }
+        PlaySource next = AutoSwitchPolicy.pickNext(matchingLines, lineId, triedLines,
                 new AutoSwitchPolicy.HealthLookup() {
                     @Override
                     public LineHealth lookup(String id) {
                         return TvBoxApp.get().health().get(healthKey(id));
                     }
-                }, now, episodeIndex);
+                }, now, -1);
         if (next == null) {
-            showError("所有线路均不可用，请稍后重试或返回详情");
+            showError(getString(R.string.player_no_matching_line));
             return;
         }
         switchToLine(next, message);
@@ -644,29 +653,43 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
         switchToLine(next, "已切换到 " + next.sourceName + "·" + next.lineName);
     }
 
-    private void switchToLine(PlaySource next, String message) {
-        if (next.episodes.isEmpty()) { showHint(getString(R.string.line_no_episodes)); return; }
-        saveHistory();
-        // 按集标题匹配新线路
-        String title = currentEpisode != null ? currentEpisode.title : null;
-        lineId = next.lineId;
-        currentSource = next;
-        int newIndex = Math.max(0, Math.min(episodeIndex, next.episodes.size() - 1));
-        if (title != null) {
-            for (int i = 0; i < next.episodes.size(); i++) {
-                if (next.episodes.get(i).title.equals(title)) {
-                    newIndex = i;
-                    break;
-                }
+    private int matchingEpisodeIndex(PlaySource source) {
+        if (currentEpisode == null) return -1;
+        String url = currentEpisode.url;
+        String title = currentEpisode.title == null ? "" : currentEpisode.title.trim();
+        int titleMatch = -1;
+        int titleMatches = 0;
+        for (int i = 0; i < source.episodes.size(); i++) {
+            PlayEpisode candidate = source.episodes.get(i);
+            if (url != null && !url.isEmpty() && url.equals(candidate.url)) return i;
+            if (!title.isEmpty() && candidate.title != null && title.equals(candidate.title.trim())) {
+                titleMatch = i;
+                titleMatches++;
             }
         }
-        episodeIndex = newIndex;
-        currentEpisode = next.episodes.get(newIndex);
-        long pos = player != null ? player.getCurrentPosition() : 0;
-        resumePosition = pos;
+        if (titleMatches != 1 || currentSource == null) return -1;
+        int originalTitleMatches = 0;
+        for (PlayEpisode episode : currentSource.episodes) {
+            if (episode.title != null && title.equals(episode.title.trim())) originalTitleMatches++;
+        }
+        return originalTitleMatches == 1 ? titleMatch : -1;
+    }
+
+    private void switchToLine(PlaySource next, String message) {
+        if (next.episodes.isEmpty()) { showHint(getString(R.string.line_no_episodes)); return; }
+        boolean playWhenReady = player == null ? resumeWhenVisible : player.getPlayWhenReady();
+        long position = player == null ? resumePosition : Math.max(resumePosition, player.getCurrentPosition());
+        int matchedIndex = matchingEpisodeIndex(next);
+        saveHistory();
+        lineId = next.lineId;
+        currentSource = next;
+        episodeIndex = matchedIndex >= 0 ? matchedIndex : Math.max(0, Math.min(episodeIndex, next.episodes.size() - 1));
+        currentEpisode = next.episodes.get(episodeIndex);
+        resumePosition = matchedIndex >= 0 ? Math.max(0, position) : 0;
         triedLines.add(next.lineId);
-        showHint(message);
-        startPlayback();
+        startPlayback(playWhenReady);
+        showHint(matchedIndex >= 0 ? message : getString(R.string.player_line_episode_unmatched,
+                next.sourceName + "·" + next.lineName, currentEpisode.title));
     }
 
     private void switchEpisode(int newIndex) {
@@ -747,10 +770,14 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
     public boolean dispatchKeyEvent(KeyEvent event) {
         int code = event.getKeyCode();
         if (controller == null || !isPlayerRemoteKey(code)) return super.dispatchKeyEvent(event);
+        if (code == KeyEvent.KEYCODE_BACK) {
+            if (event.getAction() == KeyEvent.ACTION_UP && !event.isCanceled()) finish();
+            return true;
+        }
         // Own both halves of a remote press. A late key-up must not click a new focus target.
         if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
         if (event.getRepeatCount() > 0 && !isDirectionKey(code)) return true;
-        if (errorOverlay.getVisibility() == View.VISIBLE && (isConfirmKey(code) || isDirectionKey(code))) {
+        if (errorOverlay.getVisibility() == View.VISIBLE) {
             View retry = findViewById(R.id.player_error_retry);
             View back = findViewById(R.id.player_error_back);
             View focused = errorOverlay.findFocus();
@@ -807,18 +834,6 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
                 return true;
             case KeyEvent.KEYCODE_MENU:
                 cycleSpeed();
-                return true;
-            case KeyEvent.KEYCODE_BACK:
-                if (errorOverlay.getVisibility() == View.VISIBLE) {
-                    errorOverlay.setVisibility(View.GONE);
-                    if (controller.isShown()) controller.focusCurrentControl();
-                    return true;
-                }
-                if (controller.isShown()) {
-                    controller.hide();
-                    return true;
-                }
-                finish();
                 return true;
             default:
                 break;
@@ -1047,8 +1062,7 @@ public class PlayerActivity extends AppCompatActivity implements Player.Listener
             handler.removeMessages(MSG_UPDATE_TIME);
             handler.sendEmptyMessage(MSG_UPDATE_TIME);
         } else if (currentEpisode != null) {
-            startPlayback();
-            if (player != null) player.setPlayWhenReady(resumeWhenVisible);
+            startPlayback(resumeWhenVisible);
         }
     }
 

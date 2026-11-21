@@ -252,17 +252,37 @@ public class PlayerFlowTest {
     }
 
     @Test @Config(sdk = {16, 19, 23, 28})
-    public void directionReopensHiddenControlsAndBackReleaseDoesNotExit() throws Exception {
+    public void directionReopensHiddenControlsWithoutSeeking() throws Exception {
         TestPlayerActivity player = player(); FakePlayer first = player.current(); first.position = 25000;
-        press(player, KeyEvent.KEYCODE_BACK);
+        ((PlayerControllerView) ReflectionHelpers.getField(player, "controller")).hide();
         assertEquals(View.GONE, player.findViewById(R.id.player_controller).getVisibility());
-        assertFalse(player.isFinishing());
         press(player, KeyEvent.KEYCODE_DPAD_RIGHT);
         assertEquals(View.VISIBLE, player.findViewById(R.id.player_controller).getVisibility());
         assertTrue(player.findViewById(R.id.player_toggle).hasFocus());
         assertEquals(25000, first.position); assertTrue(first.playWhenReady);
-        press(player, KeyEvent.KEYCODE_BACK); assertFalse(player.isFinishing());
-        press(player, KeyEvent.KEYCODE_BACK); assertTrue(player.isFinishing());
+    }
+
+    @Test @Config(sdk = {16, 19, 23, 28})
+    public void oneBackExitsWithControlsVisibleHiddenOrAnError() throws Exception {
+        TestPlayerActivity withControls = player();
+        key(withControls, KeyEvent.KEYCODE_BACK);
+        assertFalse(withControls.isFinishing());
+        withControls.dispatchKeyEvent(new KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_BACK));
+        assertTrue(withControls.isFinishing());
+
+        TestPlayerActivity hidden = player();
+        ((PlayerControllerView) ReflectionHelpers.getField(hidden, "controller")).hide();
+        press(hidden, KeyEvent.KEYCODE_BACK);
+        assertTrue(hidden.isFinishing());
+
+        app.settings().setAutoLineSwitch(false);
+        TestPlayerActivity failed = player();
+        failed.onPlayerError(new PlaybackException("HTTP", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS));
+        assertEquals(View.VISIBLE, failed.findViewById(R.id.player_error).getVisibility());
+        press(failed, KeyEvent.KEYCODE_3);
+        assertEquals(1, failed.players.size());
+        press(failed, KeyEvent.KEYCODE_BACK);
+        assertTrue(failed.isFinishing());
     }
 
     @Test @Config(sdk = {16, 19, 23, 28})
@@ -331,6 +351,68 @@ public class PlayerFlowTest {
         assertTrue(player.current().playWhenReady);
         player.findViewById(R.id.player_exit).requestFocus();
         press(player, KeyEvent.KEYCODE_DPAD_CENTER); assertTrue(player.isFinishing());
+    }
+
+    @Test public void changingLineWhilePausedKeepsTheMatchedEpisodeAndPosition() throws Exception {
+        TestPlayerActivity player = player();
+        press(player, KeyEvent.KEYCODE_3);
+        player.current().position = 25000;
+        player.findViewById(R.id.player_toggle).requestFocus();
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertFalse(player.current().playWhenReady);
+        player.findViewById(R.id.player_change_line).requestFocus();
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertTrue(line(player).endsWith("lineB"));
+        assertEquals(1, (int) ReflectionHelpers.getField(player, "episodeIndex"));
+        assertEquals(25000, player.current().position);
+        assertFalse(player.current().playWhenReady);
+        assertTrue(player.findViewById(R.id.player_change_line).hasFocus());
+    }
+
+    @Test public void unmatchedEpisodesAreNeverSelectedAutomaticallyOrGivenOldProgress() throws Exception {
+        TestPlayerActivity player = player();
+        Movie movie = ReflectionHelpers.getField(player, "movie");
+        PlaySource other = movie.playSources.get(1);
+        other.episodes.set(0, new PlayEpisode(0, "Special", "https://example.com/special.mp4"));
+        player.current().position = 25000;
+        player.onPlayerError(new PlaybackException("HTTP", null, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS));
+        assertEquals(1, player.players.size());
+        assertEquals(View.VISIBLE, player.findViewById(R.id.player_error).getVisibility());
+
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertEquals(View.GONE, player.findViewById(R.id.player_error).getVisibility());
+        player.findViewById(R.id.player_change_line).requestFocus();
+        press(player, KeyEvent.KEYCODE_DPAD_CENTER);
+        assertTrue(line(player).endsWith("lineB"));
+        assertEquals(0, player.current().position);
+        assertEquals("Special", ((PlayEpisode) ReflectionHelpers.getField(player, "currentEpisode")).title);
+    }
+
+    @Test public void longDescriptionOpensOnlyOnClickAndReturnsFocusWhenClosed() throws Exception {
+        server.setDispatcher(new Dispatcher() {
+            @Override public MockResponse dispatch(RecordedRequest request) {
+                String content = String.join(" ", Collections.nCopies(200, "A long movie description."));
+                return new MockResponse().setBody(detail().replace("\"vod_play_from\"", "\"vod_content\":\"" + content
+                        + "\",\"vod_play_from\""));
+            }
+        });
+        ActivityController<DetailActivity> screen = Robolectric.buildActivity(DetailActivity.class,
+                new Intent(app, DetailActivity.class).putExtra(DetailActivity.EXTRA_API_ID, "local")
+                        .putExtra(DetailActivity.EXTRA_MOVIE_ID, "1")).create().start().resume().visible();
+        screens.add(screen);
+        View button = screen.get().findViewById(R.id.detail_description_button);
+        TextView description = screen.get().findViewById(R.id.detail_desc);
+        await(() -> button.getVisibility() == View.VISIBLE);
+        assertTrue(button.requestFocus());
+        assertEquals(3, description.getMaxLines());
+        assertFalse(description.isFocusable());
+        button.performClick();
+        android.app.Dialog dialog = org.robolectric.shadows.ShadowDialog.getLatestDialog();
+        assertTrue(dialog.isShowing());
+        assertEquals(3, description.getMaxLines());
+        dialog.dismiss();
+        Shadows.shadowOf(Looper.getMainLooper()).idle();
+        assertTrue(button.hasFocus());
     }
 
     @Test public void continuousBufferingSwitchesDespiteIsPlayingFalse() throws Exception {

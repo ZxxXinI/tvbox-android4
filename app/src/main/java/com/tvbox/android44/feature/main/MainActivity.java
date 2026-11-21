@@ -1,6 +1,8 @@
 package com.tvbox.android44.feature.main;
 
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.util.SparseBooleanArray;
 import android.view.KeyEvent;
 import android.view.View;
 import android.widget.TextView;
@@ -44,10 +46,14 @@ public class MainActivity extends BaseActivity {
     }
 
     private static final String STATE_TAB = "main_tab";
+    private static final String STATE_SEARCH_FROM_RECOMMEND = "search_from_recommend";
 
     private final Map<Tab, Fragment> fragments = new HashMap<Tab, Fragment>();
     private final Map<Tab, Bundle> focusStates = new HashMap<Tab, Bundle>();
     private Tab current = Tab.HOME;
+    private boolean searchFromRecommend;
+    private boolean searchMenuDown;
+    private final SparseBooleanArray handledShortcuts = new SparseBooleanArray();
     private long lastBackAt;
     private UpdateRepository.CheckHandle startupCheck;
     private long startupToken;
@@ -85,6 +91,8 @@ public class MainActivity extends BaseActivity {
             }
         }
         selectTab(restore, false);
+        searchFromRecommend = restore == Tab.SEARCH && savedInstanceState != null
+                && savedInstanceState.getBoolean(STATE_SEARCH_FROM_RECOMMEND);
     }
 
     @Override protected void onStart() {
@@ -117,6 +125,7 @@ public class MainActivity extends BaseActivity {
     }
 
     @Override protected void onStop() {
+        searchMenuDown = false;
         if (startupCheck != null) startupCheck.cancel();
         startupCheck = null;
         TvBoxApp.get().startupUpdates().cancel(startupToken);
@@ -143,6 +152,9 @@ public class MainActivity extends BaseActivity {
             selectTab(Tab.HOME, false);
             return;
         }
+        searchFromRecommend = false;
+        searchMenuDown = false;
+        lastBackAt = 0;
         current = tab;
         updateNavHighlight(tab);
         FragmentManager fm = getSupportFragmentManager();
@@ -210,7 +222,9 @@ public class MainActivity extends BaseActivity {
 
     /** 从推荐页携带查询词跳转搜索。 */
     public void switchToSearchWithQuery(String query) {
-        selectTab(Tab.SEARCH, false);
+        boolean fromRecommend = current == Tab.RECOMMEND;
+        selectTab(Tab.SEARCH, true);
+        searchFromRecommend = fromRecommend;
         getSupportFragmentManager().executePendingTransactions();
         Fragment f = fragments.get(Tab.SEARCH);
         if (f instanceof SearchFragment) {
@@ -222,6 +236,7 @@ public class MainActivity extends BaseActivity {
     protected void onSaveInstanceState(@NonNull Bundle outState) {
         super.onSaveInstanceState(outState);
         outState.putString(STATE_TAB, current.name());
+        outState.putBoolean(STATE_SEARCH_FROM_RECOMMEND, searchFromRecommend);
         for (Map.Entry<Tab, Bundle> entry : focusStates.entrySet()) {
             outState.putBundle("focus_" + entry.getKey().name(), entry.getValue());
         }
@@ -229,12 +244,36 @@ public class MainActivity extends BaseActivity {
 
     @Override
     public boolean dispatchKeyEvent(KeyEvent event) {
-        if (event.getAction() == KeyEvent.ACTION_DOWN) {
-            Tab t = digitToTab(event.getKeyCode());
-            if (t != null) {
-                selectTab(t, true);
+        int keyCode = event.getKeyCode();
+        if (keyCode == KeyEvent.KEYCODE_MENU && current == Tab.SEARCH) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                searchMenuDown = true;
+            } else if (event.getAction() == KeyEvent.ACTION_UP) {
+                boolean open = searchMenuDown && !event.isCanceled();
+                searchMenuDown = false;
+                Fragment page = fragments.get(Tab.SEARCH);
+                if (open && page instanceof SearchFragment) ((SearchFragment) page).openPhoneSearch();
+            }
+            return true;
+        }
+        View focused = getWindow().getDecorView().findFocus();
+        Tab shortcut = digitToTab(keyCode);
+        if (shortcut != null) {
+            if (event.getAction() == KeyEvent.ACTION_DOWN && event.getRepeatCount() == 0) {
+                handledShortcuts.delete(keyCode);
+                if (focused == null || !focused.onCheckIsTextEditor()) {
+                    handledShortcuts.put(keyCode, true);
+                    selectTab(shortcut, true);
+                    return true;
+                }
+            } else if (handledShortcuts.get(keyCode)) {
+                if (event.getAction() == KeyEvent.ACTION_UP) handledShortcuts.delete(keyCode);
                 return true;
             }
+        }
+        Fragment shown = fragments.get(current);
+        if (shown instanceof SettingsFragment && ((SettingsFragment) shown).handleDirectionKey(event, focused)) {
+            return true;
         }
         return super.dispatchKeyEvent(event);
     }
@@ -260,12 +299,16 @@ public class MainActivity extends BaseActivity {
 
     @Override
     public void onBackPressed() {
+        if (current == Tab.SEARCH && searchFromRecommend) {
+            selectTab(Tab.RECOMMEND, true);
+            return;
+        }
         if (current != Tab.HOME) {
             selectTab(Tab.HOME, true);
             return;
         }
-        long now = System.currentTimeMillis();
-        if (now - lastBackAt < 2000) {
+        long now = SystemClock.elapsedRealtime();
+        if (lastBackAt > 0 && now - lastBackAt < 2000) {
             super.onBackPressed();
         } else {
             lastBackAt = now;

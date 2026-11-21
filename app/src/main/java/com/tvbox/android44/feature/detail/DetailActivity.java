@@ -8,6 +8,7 @@ import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.annotation.Nullable;
+import androidx.appcompat.app.AlertDialog;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -67,6 +68,7 @@ public class DetailActivity extends BaseActivity {
     private TextView meta;
     private TextView cast;
     private TextView desc;
+    private View descriptionButton;
     private TextView status;
     private RecyclerView linesView;
     private RecyclerView episodesView;
@@ -83,7 +85,6 @@ public class DetailActivity extends BaseActivity {
     private DetailSupplement.Handle supplementHandle;
     private String selectedLineId;
     private int selectedEpisode = -1;
-    private boolean descExpanded;
     private Bundle pendingFocus;
     private String restoredLine;
     private int restoredEpisode = -1;
@@ -102,7 +103,6 @@ public class DetailActivity extends BaseActivity {
             restoredLine = savedInstanceState.getString("line");
             restoredEpisode = savedInstanceState.getInt("episode", -1);
             pendingFocus = savedInstanceState.getBundle("focus");
-            descExpanded = savedInstanceState.getBoolean("expanded");
             fallbackOffered = savedInstanceState.getBoolean("fallbackOffered");
             WatchHistoryItem savedHistory = (WatchHistoryItem) savedInstanceState.getSerializable(PlayerActivity.EXTRA_HISTORY_ITEM);
             if (savedHistory != null) resumeHistory = savedHistory;
@@ -113,6 +113,7 @@ public class DetailActivity extends BaseActivity {
         meta = findViewById(R.id.detail_meta);
         cast = findViewById(R.id.detail_cast);
         desc = findViewById(R.id.detail_desc);
+        descriptionButton = findViewById(R.id.detail_description_button);
         status = findViewById(R.id.detail_status);
         poster = findViewById(R.id.detail_poster);
         linesView = findViewById(R.id.detail_lines);
@@ -140,22 +141,16 @@ public class DetailActivity extends BaseActivity {
         episodesView.setLayoutManager(new EpisodeGridLayoutManager(this, episodeAdapter));
         episodesView.setAdapter(episodeAdapter);
 
-        // 展开/收起：聚焦或点击展开长简介，不让页面无限增高
-        desc.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                descExpanded = !descExpanded;
-                desc.setMaxLines(descExpanded ? Integer.MAX_VALUE : 3);
-            }
-        });
-        desc.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                if (hasFocus && !descExpanded) {
-                    descExpanded = true;
-                    desc.setMaxLines(Integer.MAX_VALUE);
-                }
-            }
+        descriptionButton.setOnClickListener(anchor -> {
+            AlertDialog dialog = new AlertDialog.Builder(this, R.style.TvDialog)
+                    .setTitle(R.string.detail_description_title)
+                    .setMessage(desc.getText())
+                    .setPositiveButton(R.string.detail_description_close, null)
+                    .create();
+            dialog.setOnDismissListener(ignored -> {
+                if (!isFinishing() && !isActivityDestroyed()) anchor.requestFocus();
+            });
+            dialog.show();
         });
 
         playBtn.setOnClickListener(new View.OnClickListener() {
@@ -272,8 +267,9 @@ public class DetailActivity extends BaseActivity {
             c.append("演员：").append(movie.actor);
         }
         cast.setText(c.toString());
-        desc.setText(movie.description == null || movie.description.isEmpty()
-                ? "暂无简介" : movie.description);
+        boolean hasDescription = movie.description != null && !movie.description.trim().isEmpty();
+        desc.setText(hasDescription ? movie.description : getString(R.string.detail_description_empty));
+        descriptionButton.setVisibility(hasDescription ? View.VISIBLE : View.GONE);
         if (movie.posterUrl != null && !movie.posterUrl.isEmpty()) {
             Glide.with(this).load(movie.posterUrl)
                     .placeholder(R.drawable.poster_placeholder)
@@ -289,7 +285,6 @@ public class DetailActivity extends BaseActivity {
             preference.episodeIndex = Math.max(0, restoredEpisode);
         }
         PlaybackSelection selection = PlaybackSelection.resolve(movie, preference, false);
-        desc.setMaxLines(descExpanded ? Integer.MAX_VALUE : 3);
 
         List<ChipAdapter.Chip> chips = new ArrayList<ChipAdapter.Chip>();
         String defaultLine = selection == null ? "" : selection.source.lineId;
@@ -492,7 +487,6 @@ public class DetailActivity extends BaseActivity {
         super.onSaveInstanceState(out);
         out.putString("line", selectedLineId);
         out.putInt("episode", selectedEpisode);
-        out.putBoolean("expanded", descExpanded);
         out.putBundle("focus", PageFocusState.capture(findViewById(android.R.id.content)));
         out.putSerializable(PlayerActivity.EXTRA_HISTORY_ITEM, resumeHistory);
         out.putBoolean("fallbackOffered", fallbackOffered);

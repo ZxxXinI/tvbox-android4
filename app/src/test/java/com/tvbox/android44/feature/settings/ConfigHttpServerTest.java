@@ -102,6 +102,26 @@ public class ConfigHttpServerTest {
         callback(); String text = response.get(2, TimeUnit.SECONDS);
         assertTrue(text.startsWith("HTTP/1.1 200")); assertFalse(text.contains("unit-test-key-marker")); assertEquals(1, saves.get());
     }
+    @Test public void searchFormRejectsBlankAndLongQueriesAndClosesAfterOneChineseKeyword() throws Exception {
+        ConfigHttpServer search = session(ConfigHttpServer.Mode.SEARCH, 0, 1);
+        String token = search.token();
+        String page = request(search, "GET", token, "").get(2, TimeUnit.SECONDS);
+        assertTrue(page.contains("name=\"query\""));
+        assertFalse(page.contains("name=\"apiKey\""));
+        assertFalse(page.contains("name=\"baseUrl\""));
+        assertTrue(request(search, "POST", token, "query=+++").get(2, TimeUnit.SECONDS).startsWith("HTTP/1.1 400"));
+        String longQuery = String.join("", Collections.nCopies(61, "x"));
+        assertTrue(request(search, "POST", token, "query=" + longQuery).get(2, TimeUnit.SECONDS).startsWith("HTTP/1.1 400"));
+        Future<String> response = request(search, "POST", token, "query=%E5%BD%B1%E7%89%87");
+        callback();
+        assertTrue(response.get(2, TimeUnit.SECONDS).startsWith("HTTP/1.1 200"));
+        callback();
+        assertEquals("影片", fields.get().get("query"));
+        assertEquals(1, saves.get());
+        assertFalse(search.isRunning());
+        assertNull(search.token());
+        assertPortReleased(search.port());
+    }
     @Test public void expiredIdleSessionClosesPortWithoutReceivingAnyRequest() throws Exception {
         ConfigHttpServer session = session(ConfigHttpServer.Mode.API, 0, 1);
         clock.set(300100); timer.expire(); callback();

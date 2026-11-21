@@ -154,6 +154,11 @@ public class MovieRepository {
         return submitList(key, apiLine, page, typeIds, cb);
     }
 
+    public Request fetchHomepageBackup(ApiLine apiLine, Callback<PagedMovies> cb) {
+        String key = "cat|" + apiLine.id + "|" + typeKey(null) + "|1";
+        return submitList(key, apiLine, 1, null, true, cb);
+    }
+
     /** 分类表（ac=list）：30 分钟缓存；失败不进入来源冷却（不阻塞列表请求）。 */
     public Request fetchCategories(ApiLine apiLine, Callback<List<Category>> cb) {
         String key = "cats|" + apiLine.id;
@@ -254,19 +259,25 @@ public class MovieRepository {
 
     private Request submitList(final String key, final ApiLine apiLine, final int page,
                                final List<String> typeIds, final Callback<PagedMovies> cb) {
+        return submitList(key, apiLine, page, typeIds, false, cb);
+    }
+
+    private Request submitList(final String key, final ApiLine apiLine, final int page,
+                               final List<String> typeIds, final boolean backupProbe, final Callback<PagedMovies> cb) {
         CacheEntry<PagedMovies> cached = listCache.get(key);
         long now = System.currentTimeMillis();
-        if (cached != null && now - cached.at <= AppConstants.LIST_CACHE_TTL_MS) {
+        if (!backupProbe && cached != null && now - cached.at <= AppConstants.LIST_CACHE_TTL_MS) {
             Request noop = new Request();
             deliverMain(noop, cb, new Result.Success<PagedMovies>(cached.value, apiLine.id, true));
             return noop;
         }
         final Request request = new Request();
-        submitMerged(key, request, new Worker<Result<PagedMovies>>() {
+        long timeoutMs = backupProbe ? AppConstants.HOME_BACKUP_TIMEOUT_MS : AppConstants.LIST_CALL_TIMEOUT_MS;
+        submitMerged(backupProbe ? key + "|backup" : key, request, new Worker<Result<PagedMovies>>() {
             @Override
             public Result<PagedMovies> work(CancelScope scope) {
                 try {
-                    PagedMovies mapped = fetchMappedPage(apiLine, page, typeIds, scope);
+                    PagedMovies mapped = fetchMappedPage(apiLine, page, typeIds, timeoutMs, scope);
                     listCache.put(key, new CacheEntry<PagedMovies>(mapped, System.currentTimeMillis()));
                     clearCooldown(apiLine.id);
                     return new Result.Success<PagedMovies>(mapped, apiLine.id, false);
@@ -274,7 +285,7 @@ public class MovieRepository {
                     if (scope.isCancelled()) {
                         return cancelledResult();
                     }
-                    markCooldown(apiLine.id, System.currentTimeMillis());
+                    if (!backupProbe) markCooldown(apiLine.id, System.currentTimeMillis());
                     ErrorKind kind = ErrorKind.fromException(e);
             if (com.tvbox.android44.BuildConfig.DEBUG) {
                 android.util.Log.d("TVBOX_ERR", kind + " " + e.getClass().getSimpleName());
@@ -288,15 +299,16 @@ public class MovieRepository {
 
     private PagedMovies fetchMappedPage(final ApiLine apiLine, final int page,
                                         final List<String> typeIds,
+                                        final long timeoutMs,
                                         final CancelScope scope) throws IOException {
         if (typeIds == null || typeIds.isEmpty()) {
             VodResponseDto dto = client.queryPage(apiLine.baseUrl, page, null,
-                    AppConstants.LIST_CALL_TIMEOUT_MS, scope);
+                    timeoutMs, scope);
             return MacCmsMapper.toPagedMovies(apiLine, dto);
         }
         if (typeIds.size() == 1) {
             VodResponseDto dto = client.queryPage(apiLine.baseUrl, page, typeIds.get(0),
-                    AppConstants.LIST_CALL_TIMEOUT_MS, scope);
+                    timeoutMs, scope);
             return MacCmsMapper.toPagedMovies(apiLine, dto);
         }
 
@@ -306,7 +318,7 @@ public class MovieRepository {
                 @Override
                 public PagedMovies call() throws Exception {
                     VodResponseDto dto = client.queryPage(apiLine.baseUrl, page, typeId,
-                            AppConstants.LIST_CALL_TIMEOUT_MS, scope);
+                            timeoutMs, scope);
                     return MacCmsMapper.toPagedMovies(apiLine, dto);
                 }
             });
@@ -315,7 +327,7 @@ public class MovieRepository {
         List<Future<PagedMovies>> futures;
         try {
             // 聚合请求整体限时，避免某个子分类失联让首页无限等待。
-            futures = categoryExecutor.invokeAll(jobs, AppConstants.LIST_CALL_TIMEOUT_MS,
+            futures = categoryExecutor.invokeAll(jobs, timeoutMs,
                     TimeUnit.MILLISECONDS);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

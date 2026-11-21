@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <com.tvbox.android44.common.StateLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/home_state"
     android:layout_width="match_parent"
@@ -96,7 +96,6 @@
                     android:layout_height="wrap_content"
                     android:layout_gravity="left|center_vertical"
                     android:layout_marginLeft="24dp"
-                    android:layout_marginTop="30dp"
                     android:orientation="vertical">
 
                     <TextView
@@ -142,6 +141,8 @@
                     </LinearLayout>
                 </LinearLayout>
             </FrameLayout>
+
+            <include layout="@layout/section_home_continue" />
 
             <androidx.recyclerview.widget.RecyclerView
                 android:id="@+id/home_tabs"
